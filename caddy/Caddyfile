@@ -1,0 +1,80 @@
+{
+}
+
+#############################
+# vehiclemap.xyz
+#############################
+
+http://vehiclemap.xyz {
+  @internal {
+    remote_ip 172.18.0.0/16
+  }
+  handle @internal {
+    reverse_proxy web:8080 {
+      header_up X-Forwarded-Proto "https"
+    }
+  }
+  handle {
+    redir https://{host}{uri} permanent
+  }
+}
+
+https://vehiclemap.xyz {
+  reverse_proxy web:8080 {
+    header_up X-Forwarded-Proto "https"
+  }
+}
+
+#############################
+# api.vehiclemap.xyz
+#############################
+
+#http://api.vehiclemap.xyz {
+#  @internal {
+#    remote_ip 172.18.0.0/16
+#  }
+#  handle @internal {
+#    reverse_proxy api:8001 {
+#     header_up X-Forwarded-Proto "https"
+#    }
+#  }
+#  handle {
+#    redir https://{host}{uri} permanent
+#  }
+#}
+
+http://api.vehiclemap.xyz {
+  reverse_proxy api:8001 {
+    header_up X-Forwarded-Proto "http"
+  }
+}
+
+https://api.vehiclemap.xyz {
+  reverse_proxy api:8001 {
+    header_up X-Forwarded-Proto "http"
+  }
+}
+
+#############################
+# webapi.vehiclemap.xyz
+#############################
+
+http://webapi.vehiclemap.xyz {
+  @internal {
+    remote_ip 172.18.0.0/16
+  }
+  handle @internal {
+    reverse_proxy webapi:8002 {
+      header_up X-Forwarded-Proto "https"
+    }
+  }
+  handle {
+    redir https://{host}{uri} permanent
+  }
+}
+
+https://webapi.vehiclemap.xyz {
+  reverse_proxy webapi:8002 {
+    header_up X-Forwarded-Proto "https"
+  }
+}
