@@ -1,0 +1,93 @@
+services:
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - internal_network
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+    restart: unless-stopped
+
+  api:
+    build: ./api
+    container_name: api
+    depends_on:
+      - caddy
+    deploy:
+      replicas: ${ENABLE_API:-1}
+    environment:
+      - DATABASE_URL=dbname=vehicle_db user=api_user password=heslo host=db
+    networks:
+      - internal_network
+    restart: unless-stopped
+    volumes:
+      - ./api/main.py:/app/main.py
+      - ./api_db_helper:/app/api_db_helper
+      - /var/logs/vehicle/api:/app/logs
+
+  webapi:
+    build: ./webapi
+    container_name: webapi
+    depends_on:
+      - caddy
+    deploy:
+      replicas: ${ENABLE_WEBAPI:-1}
+    environment:
+      - DATABASE_URL=dbname=vehicle_db user=api_user password=heslo host=db
+    networks:
+      - internal_network
+    restart: unless-stopped
+    volumes:
+      - ./webapi:/app/webapi
+      - /var/logs/vehicle/webapi:/app/logs
+
+  web:
+    build: ./webserver
+    container_name: web
+    depends_on:
+      - caddy
+    entrypoint: [ "sh", "/entrypoint.sh" ]
+    networks:
+      - internal_network
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    volumes:
+      - ./webserver/html:/var/www/html
+      - ./webserver/reload_server.py:/reload_server.py
+      - /etc/letsencrypt/:/etc/letsencrypt/
+      - /var/log/apache2:/var/log/apache2
+      - ./webserver/entrypoint_webserver.sh:/entrypoint.sh
+
+  db:
+    image: drlubos/postgis-17-3.5-arm64:latest
+    platform: linux/arm64
+    container_name: db
+    environment:
+      POSTGRES_USER: api_user
+      POSTGRES_PASSWORD: heslo
+      POSTGRES_DB: vehicle_db
+    deploy:
+      replicas: ${ENABLE_DB:-1}
+    networks:
+      - internal_network
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./database/structure.sql:/scripts/structure.sql
+      - ./database/test_data.sql:/scripts/test_data.sql
+      - ./database/arduino_test_user.sql:/scripts/arduino_test_user.sql
+
+volumes:
+  db-data:
+
+networks:
+  internal_network:
+    driver: bridge
