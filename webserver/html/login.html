@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Vehicle Map - Login</title>
+</head>
+<body>
+  <h1>Login to VehicleMap</h1>
+  <form id="loginForm">
+    <label for="username">Username</label>
+    <input id="username" name="username" type="text" required />
+    <br />
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required />
+    <br />
+
+    <button type="submit">Log In</button>
+  </form>
+
+  <script>
+    const loginForm = document.getElementById("loginForm");
+    loginForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+
+      const url = "https://webapi.vehiclemap.xyz/login";
+
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        console.log(resp);
+        if (!resp.ok) {
+          alert("Login failed");
+          return;
+        }
+
+        const data = await resp.json();
+        // Uložíme token do localStorage (alebo do cookie)
+        localStorage.setItem("authToken", data.token);
+
+        // Presmerovanie na /dashboard.html
+        window.location.href = "/dashboard.html";
+      } catch (err) {
+        console.error(err);
+        alert("Error connecting to server");
+      }
+    });
+  </script>
+</body>
+</html>

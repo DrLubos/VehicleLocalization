@@ -26,7 +26,7 @@ services:
       - internal_network
     restart: unless-stopped
     volumes:
-      - ./api/main.py:/app/main.py
+      - ./api/:/app/
       - ./api_db_helper:/app/api_db_helper
       - /var/logs/vehicle/api:/app/logs
 
@@ -43,7 +43,8 @@ services:
       - internal_network
     restart: unless-stopped
     volumes:
-      - ./webapi:/app/webapi
+      - ./webapi:/app/
+      - ./api_db_helper:/app/api_db_helper
       - /var/logs/vehicle/webapi:/app/logs
 
   web:
@@ -59,8 +60,6 @@ services:
     restart: unless-stopped
     volumes:
       - ./webserver/html:/var/www/html
-      - ./webserver/reload_server.py:/reload_server.py
-      - /etc/letsencrypt/:/etc/letsencrypt/
       - /var/log/apache2:/var/log/apache2
       - ./webserver/entrypoint_webserver.sh:/entrypoint.sh
 

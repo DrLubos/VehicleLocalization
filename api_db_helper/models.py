@@ -11,6 +11,28 @@ from geoalchemy2 import Geometry
 Base = declarative_base()
 
 
+class User(Base):
+    """
+    User model representing a user in the system.
+
+    Attributes:
+        id (int): Primary key.
+        username (str): Unique username, max length 50, not nullable.
+        password_hash (str): Hashed password, max length 255, not nullable.
+        email (str): User's email, max length 150, not nullable.
+        created_at (datetime): Timestamp of user creation, defaults to current UTC time.
+        last_login (datetime): Timestamp of last login, nullable.
+    """
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+    username = Column(String(50), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    email = Column(String(150), nullable=False)
+    created_at = Column(DateTime, nullable=False,
+                        default=datetime.datetime.now(datetime.timezone.utc))
+    last_login = Column(DateTime, nullable=True)
+
+
 class Vehicle(Base):
     """
     Represents a vehicle in the database.
