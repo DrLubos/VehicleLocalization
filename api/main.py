@@ -7,20 +7,20 @@ import secrets
 import logging
 import json
 
-from typing import Tuple, Callable, Awaitable, AsyncGenerator, Any
+from typing import Tuple, Callable, Awaitable
 from fastapi import FastAPI, Depends, HTTPException, Request
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2 import WKTElement
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
+from schemas import PositionRequest, RouteCreationRequest, TokenRequest,\
+    TokenResponse, TokenVerifyRequest
+from api_db_helper.db_connection import get_db
 from api_db_helper.models import Vehicle, Route, Position
 from api_db_helper.crud import get_vehicle_by_token, get_active_assignment,\
     get_latest_route, get_latest_position
-from api.schemas import PositionRequest, RouteCreationRequest, TokenRequest,\
-    TokenResponse, TokenVerifyRequest
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,11 +63,6 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         return response
 
-DATABASE_URL = "postgresql+asyncpg://api_user:heslo@db/vehicle_db"
-engine = create_async_engine(DATABASE_URL, echo=True)
-SessionLocal = sessionmaker(autoflush=False,
-                            bind=engine, class_=AsyncSession, expire_on_commit=False)
-
 
 DOCS_ENABLED = True
 app = FastAPI(
@@ -77,17 +72,6 @@ app = FastAPI(
     openapi_url="/openapi.json" if DOCS_ENABLED else None,
 )
 app.add_middleware(LoggingMiddleware)
-
-
-async def get_session() -> AsyncGenerator[AsyncSession, Any]:
-    """
-    Asynchronous generator function that provides a database session.
-
-    Yields:
-        AsyncSession: An asynchronous SQLAlchemy session object.
-    """
-    async with SessionLocal() as session:
-        yield session
 
 
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -194,13 +178,13 @@ async def update_route_geom(session: AsyncSession, route_id: int, lon: float, la
 
 @app.post("/location", status_code=200)
 async def post_location(data: PositionRequest,
-                        session: AsyncSession = Depends(get_session)) -> dict:
+                        session: AsyncSession = Depends(get_db)) -> dict:
     """
     Handles the posting of a vehicle's location.
 
     Args:
         data (PositionRequest): Request data containing the vehicle's informations.
-        session (AsyncSession, optional): Database session dependency. Default Depends(get_session).
+        session (AsyncSession, optional): Database session dependency. Default Depends(get_db).
 
 
     Raises:
@@ -290,13 +274,13 @@ async def post_location(data: PositionRequest,
 
 @app.post("/route", status_code=200)
 async def post_route(data: RouteCreationRequest,
-                     session: AsyncSession = Depends(get_session)) -> dict:
+                     session: AsyncSession = Depends(get_db)) -> dict:
     """
     Create a new route for a vehicle based on the provided data.
 
     Args:
         data (RouteCreationRequest): Data required to create a new route, including vehicle token.
-        session (AsyncSession, optional): Database session dependency. Default Depends(get_session).
+        session (AsyncSession, optional): Database session dependency. Default Depends(get_db).
 
     Returns:
         dict: A dictionary containing success status, message, and ID of the newly created route.
@@ -336,7 +320,7 @@ async def post_route(data: RouteCreationRequest,
 
 
 @app.post("/request_token", response_model=TokenResponse, status_code=200)
-async def post_token(data: TokenRequest, session: AsyncSession = Depends(get_session)) -> dict:
+async def post_token(data: TokenRequest, session: AsyncSession = Depends(get_db)) -> dict:
     """
     Endpoint to request a new token for a vehicle.
     Args:
@@ -377,7 +361,7 @@ async def post_token(data: TokenRequest, session: AsyncSession = Depends(get_ses
 
 @app.post("/verify_token", status_code=200)
 async def post_verify_token(data: TokenVerifyRequest,
-                            session: AsyncSession = Depends(get_session)) -> dict:
+                            session: AsyncSession = Depends(get_db)) -> dict:
     """
     Endpoint to verify a vehicle token.
 
