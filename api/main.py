@@ -5,19 +5,17 @@ import datetime
 import math
 import secrets
 import logging
-import json
 
-from typing import Tuple, Callable, Awaitable
-from fastapi import FastAPI, Depends, HTTPException, Request
+from typing import Tuple
+from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2 import WKTElement
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
 
 from schemas import PositionRequest, RouteCreationRequest, TokenRequest,\
     TokenResponse, TokenVerifyRequest
 from api_db_helper.db_connection import get_db
+from api_db_helper.api_logging import LoggingMiddleware
 from api_db_helper.models import Vehicle, Route, Position
 from api_db_helper.crud import get_vehicle_by_token, get_active_assignment,\
     get_latest_route, get_latest_position
@@ -28,40 +26,6 @@ logging.basicConfig(
     filename="/app/logs/access.log",
     filemode="a"
 )
-
-class LoggingMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware for logging HTTP requests.
-
-    This middleware logs the HTTP method, URL, request body, and client IP address
-    for each incoming request.
-
-    Methods:
-        dispatch(request: Request, call_next): Asynchronously processes the incoming request,
-        logs relevant information, and forwards the request to the next middleware or endpoint.
-
-    Attributes:
-        None
-    """
-    async def dispatch(self, request: Request,
-                       call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        body_bytes = await request.body()
-        try:
-            body_str = body_bytes.decode('utf-8')
-        except UnicodeDecodeError:
-            body = "Error reading body"
-        else:
-            try:
-                body = json.loads(body_str)
-            except json.JSONDecodeError:
-                body = body_str
-
-        client_ip = request.client.host if request.client else "unknown"
-        logging.info("Request: %s %s - Body: %s - IP: %s",
-                     request.method, request.url, body, client_ip)
-
-        response = await call_next(request)
-        return response
 
 
 DOCS_ENABLED = True

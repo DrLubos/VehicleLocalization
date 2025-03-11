@@ -3,17 +3,16 @@ This module contains API endpoints for interaction with the database from web cl
 """
 import datetime
 import logging
-import json
-from typing import Callable, Awaitable
 import bcrypt
 import jwt
-from fastapi import FastAPI, HTTPException, Depends, Request, Response
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.security import OAuth2PasswordBearer
 
 from schemas import LoginRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from api_db_helper.api_logging import LoggingMiddleware
 from api_db_helper.models import User
 from api_db_helper.db_connection import get_db
 
@@ -25,47 +24,13 @@ logging.basicConfig(
     filemode="a"
 )
 
-class LoggingMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware for logging HTTP requests.
-
-    This middleware logs the HTTP method, URL, request body, and client IP address
-    for each incoming request.
-
-    Methods:
-        dispatch(request: Request, call_next): Asynchronously processes the incoming request,
-        logs relevant information, and forwards the request to the next middleware or endpoint.
-
-    Attributes:
-        None
-    """
-    async def dispatch(self, request: Request,
-                       call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        body_bytes = await request.body()
-        try:
-            body_str = body_bytes.decode('utf-8')
-        except UnicodeDecodeError:
-            body = "Error reading body"
-        else:
-            try:
-                body = json.loads(body_str)
-            except json.JSONDecodeError:
-                body = body_str
-
-        client_ip = request.client.host if request.client else "unknown"
-        logging.info("Request: %s %s - Body: %s - IP: %s",
-                     request.method, request.url, body, client_ip)
-
-        response = await call_next(request)
-        return response
-
 
 SECRET_KEY = "supersecret"
 ALGORITHM = "HS256"
 
 DOCS_ENABLED = True
 app = FastAPI(
-    title="Vehicle Location API",
+    title="Vehicle Location WebAPI",
     docs_url="/docs" if DOCS_ENABLED else None,
     redoc_url="/redoc" if DOCS_ENABLED else None,
     openapi_url="/openapi.json" if DOCS_ENABLED else None,
@@ -78,6 +43,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+
+async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=401, detail="Invalid credentials") from e
+    stmt = select(User).filter(User.username == username)
+    result = await db.execute(stmt)
+    user = result.scalars().first()
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
 
 @app.post("/login", status_code=200)
 async def login_user(login_data: LoginRequest, db: AsyncSession = Depends(get_db)):
