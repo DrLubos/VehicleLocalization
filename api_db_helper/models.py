@@ -3,12 +3,24 @@ This module contains the SQLAlchemy models for the database tables.
 """
 import datetime
 
+from enum import Enum
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, ForeignKey
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import declarative_base
 from geoalchemy2 import Geometry
 
 
 Base = declarative_base()
+
+
+class VehicleStatus(Enum):
+    """
+    Enum representing the status of a vehicle.
+    """
+    REGISTERED = "registered"
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    DELETED = "deleted"
 
 
 class User(Base):
@@ -54,9 +66,10 @@ class Vehicle(Base):
     __tablename__ = "vehicles"
     id = Column(Integer, primary_key=True)
     name = Column(String(255), nullable=False)
-    token = Column(String(255), unique=True, nullable=False)
+    token = Column(String(32), unique=True, nullable=False)
     imei = Column(String(255), nullable=False)
-    status = Column(String(20), nullable=False, default="registered")
+    status = Column(SQLEnum(VehicleStatus, name="vehicle_status_enum"), nullable=False,
+                    default=VehicleStatus.REGISTERED)
     color = Column(String(7), nullable=False, default="#FF0000")
     position_check_freq = Column(Integer, nullable=False, default=15)
     min_distance_delta = Column(Integer, nullable=False, default=3)

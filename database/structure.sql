@@ -8,13 +8,16 @@ CREATE TABLE users (
     last_login TIMESTAMP(0) DEFAULT NULL-- Date when the user last logged in
 );
 
+-- Enum that contains the possible statuses for the vehicles
+CREATE TYPE vehicle_status_enum AS ENUM ('registered', 'active', 'inactive', 'deleted');
+
 -- Table that contains the vehicles
 CREATE TABLE vehicles (
     id SERIAL PRIMARY KEY,-- Unique identifier for the vehicle
     name VARCHAR(255) NOT NULL,-- Name of the vehicle
     token CHAR(32) UNIQUE,-- Token used to authenticate the vehicle
     imei VARCHAR(255) NOT NULL,-- IMEI of the vehicle
-    status VARCHAR(20) DEFAULT 'registered',-- Status of the vehicle
+    status vehicle_status_enum DEFAULT 'registered',-- Status of the vehicle
     color CHAR(7) NOT NULL DEFAULT '#FF0000',-- Hexadecimal color of the vehicle
     position_check_freq SMALLINT NOT NULL DEFAULT 15,-- Frequency in seconds to check the position of the vehicle
     min_distance_delta SMALLINT NOT NULL DEFAULT 3,-- Minimum distance in meters to consider a new position
