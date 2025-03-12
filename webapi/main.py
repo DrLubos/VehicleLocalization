@@ -9,7 +9,8 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 
-from schemas import LoginRequest, VehicleCreate, VehicleUpdate
+from schemas import LoginRequest, VehicleCreate, VehicleUpdate, VehicleResponse, RouteResponse,\
+    PositionResponse
 from sqlalchemy import or_, case, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -48,6 +49,21 @@ app.add_middleware(
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+
+
+def extract_lat_lon(wkt: str) -> tuple[float, float]:
+    """
+    Extracts latitude and longitude from a WKT (Well-Known Text) POINT string.
+
+    Args:
+        wkt (str): A WKT POINT string in the format "POINT(lon lat)".
+
+    Returns:
+        tuple[float, float]: A tuple containing the latitude and longitude as floats.
+    """
+    coords = wkt.lstrip("POINT(").rstrip(")").split()
+    lon, lat = float(coords[0]), float(coords[1])
+    return lat, lon
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme),
@@ -114,7 +130,7 @@ async def login_user(login_data: LoginRequest, db: AsyncSession = Depends(get_db
     return {"token": token}
 
 
-@app.get("/all-vehicles", status_code=200)
+@app.get("/all-vehicles", status_code=200, response_model=list[VehicleResponse])
 async def get_all_vehicles(current_user: User = Depends(get_current_user),
                        db: AsyncSession = Depends(get_db)) -> list[Vehicle]:
     """
@@ -153,11 +169,10 @@ async def get_all_vehicles(current_user: User = Depends(get_current_user),
     )
 
     result = await db.execute(stmt)
-    vehicles = result.scalars().all()
-    return vehicles
+    return result.scalars().all()
 
 
-@app.get("/vehicles", status_code=200)
+@app.get("/vehicles", status_code=200, response_model=list[VehicleResponse])
 async def get_vehicles(current_user: User = Depends(get_current_user),
                        db: AsyncSession = Depends(get_db)) -> list[Vehicle]:
     """
@@ -192,7 +207,7 @@ async def get_vehicles(current_user: User = Depends(get_current_user),
     return vehicles_result.scalars().all()
 
 
-@app.post("/vehicles", status_code=201)
+@app.post("/vehicles", status_code=201, response_model=VehicleResponse)
 async def create_vehicle(vehicle_data: VehicleCreate,
                 current_user: User = Depends(get_current_user),
                 db: AsyncSession = Depends(get_db)) -> Vehicle:
@@ -232,7 +247,7 @@ async def create_vehicle(vehicle_data: VehicleCreate,
     return new_vehicle
 
 
-@app.put("/vehicles/{vehicle_id}", status_code=200)
+@app.put("/vehicles/{vehicle_id}", status_code=200, response_model=VehicleResponse)
 async def update_vehicle(vehicle_id: int,
                          vehicle_data: VehicleUpdate,
                          current_user: User = Depends(get_current_user),
@@ -345,7 +360,7 @@ async def unassign_vehicle(vehicle_id: int,
     vehicle.status = VehicleStatus.DELETED
 
     await db.commit()
-    return {"success": True, "message": "Vehicle unassigned successfully."}
+    return {"success": True, "message": "Vehicle" + vehicle.name + "unassigned successfully."}
 
 
 @app.delete("/vehicles/{vehicle_id}/force-delete", status_code=200)
@@ -393,16 +408,12 @@ async def force_delete_vehicle_data(vehicle_id: int,
     result_other_assign = await db.execute(stmt_other_assign)
     other_assignments = result_other_assign.scalars().all()
 
-    vehicle_deleted = False
     if not other_assignments:
         await db.execute(delete(Vehicle).where(Vehicle.id == vehicle_id))
         await db.commit()
-        vehicle_deleted = True
 
-    message = "Force delete performed for routes, positions, and assignments for current user."
-    if vehicle_deleted:
-        message += " Vehicle deleted as no other assignment exists."
-    return {"success": True, "message": message}
+    return {"success": True, "message": "Force delete performed for routes, " +
+            "positions, and assignments for current user."}
 
 
 @app.put("/vehicles/{vehicle_id}/togle-status", status_code=200)
@@ -460,7 +471,7 @@ async def toggle_vehicle_status(vehicle_id: int,
     }
 
 
-@app.get("/vehicles/{vehicle_id}/routes", status_code=200)
+@app.get("/vehicles/{vehicle_id}/routes", status_code=200, response_model=RouteResponse)
 async def get_vehicle_routes(vehicle_id: int,
                              current_user: User = Depends(get_current_user),
                              db: AsyncSession = Depends(get_db),
@@ -496,7 +507,7 @@ async def get_vehicle_routes(vehicle_id: int,
     return result_routes.scalars().all()
 
 
-@app.get("/routes/{route_id}/positions", status_code=200)
+@app.get("/routes/{route_id}/positions", status_code=200, response_model=PositionResponse)
 async def get_route_positions(route_id: int,
                            current_user: User = Depends(get_current_user),
                            db: AsyncSession = Depends(get_db)) -> list[Position]:
@@ -535,7 +546,19 @@ async def get_route_positions(route_id: int,
         raise HTTPException(status_code=403, detail="Not authorized to view this route")
 
     result_positions = await db.execute(select(Position).filter(Position.route_id == route_id))
-    return result_positions.scalars().all()
+    positions = result_positions.scalars().all()
+    response_positions = []
+    for pos in positions:
+        lat, lon = extract_lat_lon(pos.location)
+        response_positions.append({
+            "id": pos.id,
+            "route_id": pos.route_id,
+            "timestamp": pos.timestamp,
+            "latitude": lat,
+            "longitude": lon,
+            "speed": pos.speed,
+        })
+    return response_positions
 
 
 @app.delete("/routes/{route_id}", status_code=200)
