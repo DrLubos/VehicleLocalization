@@ -4,7 +4,7 @@ CREATE TABLE users (
     username VARCHAR(50) UNIQUE NOT NULL,-- Username of the user
     password_hash TEXT NOT NULL,-- Hash of the user's password
     email VARCHAR(150) UNIQUE NOT NULL,-- Email of the user
-    created_at TIMESTAMP(0) DEFAULT CURRENT_TIMESTAMP,-- Date when the user was created
+    created_at TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP,-- Date when the user was created
     last_login TIMESTAMP(0) DEFAULT NULL-- Date when the user last logged in
 );
 
@@ -24,15 +24,15 @@ CREATE TABLE vehicles (
     max_idle_minutes SMALLINT NOT NULL DEFAULT 15,-- Maximum time in minutes to consider the vehicle as idle
     snap_to_road BOOLEAN NOT NULL DEFAULT FALSE,-- Flag that indicates if the positions should be snapped to the road
     manual_route_start BOOLEAN NOT NULL DEFAULT TRUE,-- Flag that indicates if the routes can be started manually
-    created_at TIMESTAMP(0) DEFAULT CURRENT_TIMESTAMP-- Date when the vehicle was created
+    created_at TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP-- Date when the vehicle was created
 );
 
 -- Table that contains the user-vehicle assignments
 CREATE TABLE user_vehicle_assignments (
     id SERIAL PRIMARY KEY,-- Unique identifier for the assignment
-    user_id INT REFERENCES users(id) ON DELETE CASCADE,-- User that is assigned to the vehicle
-    vehicle_id INT REFERENCES vehicles(id) ON DELETE CASCADE,-- Vehicle that is assigned to the user
-    start_date TIMESTAMP(0) DEFAULT CURRENT_TIMESTAMP,-- Date when the assignment started
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,-- User that is assigned to the vehicle
+    vehicle_id INT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,-- Vehicle that is assigned to the user
+    start_date TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP,-- Date when the assignment started
     end_date TIMESTAMP(0) DEFAULT NULL,-- Date when the assignment ended
     UNIQUE(user_id, vehicle_id, start_date)-- Unique constraint to avoid duplicate assignments
 );
@@ -51,7 +51,7 @@ CREATE TABLE routes (
 
 -- Table that contains the positions for each route
 CREATE TABLE positions (
-    position_id SERIAL PRIMARY KEY,-- Unique identifier for the position
+    id SERIAL PRIMARY KEY,-- Unique identifier for the position
     route_id INT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,-- Route that the position belongs to
     timestamp TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP,-- Date when the position was recorded
     location GEOMETRY(Point, 4326) NOT NULL,-- Location of the position

@@ -66,7 +66,7 @@ class Vehicle(Base):
     __tablename__ = "vehicles"
     id = Column(Integer, primary_key=True)
     name = Column(String(255), nullable=False)
-    token = Column(String(32), unique=True, nullable=False)
+    token = Column(String(32), unique=True, nullable=True)
     imei = Column(String(255), nullable=False)
     status = Column(SQLEnum(VehicleStatus, name="vehicle_status_enum"), nullable=False,
                     default=VehicleStatus.REGISTERED)
@@ -93,8 +93,8 @@ class UserVehicleAssignment(Base):
     """
     __tablename__ = "user_vehicle_assignments"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    vehicle_id = Column(Integer, ForeignKey("vehicles.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    vehicle_id = Column(Integer, ForeignKey("vehicles.id", ondelete="CASCADE"), nullable=False)
     start_date = Column(DateTime, nullable=False,
                         default=datetime.datetime.now(datetime.timezone.utc))
     end_date = Column(DateTime, nullable=True)
@@ -132,14 +132,14 @@ class Position(Base):
     Represents a Position in the database.
 
     Attributes:
-        position_id (int): Primary key.
+        id (int): Primary key.
         route_id (int): Foreign key referencing the route.
         timestamp (datetime): When the position was recorded. Defaults to current UTC time.
         location (Geometry): Geographical location as POINT with SRID 4326.
         speed (float): Speed in km/h at the recorded position.
     """
     __tablename__ = "positions"
-    position_id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True)
     route_id = Column(Integer, ForeignKey("routes.id", ondelete="CASCADE"), nullable=False)
     timestamp = Column(DateTime, nullable=False,
                        default=datetime.datetime.now(datetime.timezone.utc))
