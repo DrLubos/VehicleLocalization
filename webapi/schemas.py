@@ -29,7 +29,6 @@ class VehicleCreate(BaseModel):
         position_check_freq (int): The position check frequency in minutes.
         min_distance_delta (int): The minimum distance delta for updates.
         max_idle_minutes (int): The maximum idle time in minutes.
-        snap_to_road (bool): Whether to snap the position to the nearest road.
         manual_route_start_enabled (bool): Whether to manually start the route.
     """
     name: str
@@ -38,7 +37,6 @@ class VehicleCreate(BaseModel):
     position_check_freq: int
     min_distance_delta: int
     max_idle_minutes: int
-    snap_to_road: bool
     manual_route_start_enabled: bool
 
 
@@ -52,7 +50,6 @@ class VehicleUpdate(BaseModel):
         position_check_freq (int, optional): The position check frequency in minutes.
         min_distance_delta (int, optional): The minimum distance delta for updates.
         max_idle_minutes (int, optional): The maximum idle time in minutes.
-        snap_to_road (bool, optional): Whether to snap the position to the nearest road.
         manual_route_start_enabled (bool, optional): Whether to manually start the route.
     """
     name: Optional[str] = None
@@ -61,7 +58,6 @@ class VehicleUpdate(BaseModel):
     position_check_freq: Optional[int] = None
     min_distance_delta: Optional[int] = None
     max_idle_minutes: Optional[int] = None
-    snap_to_road: Optional[bool] = None
     manual_route_start_enabled: Optional[bool] = None
 
 
@@ -79,7 +75,6 @@ class VehicleResponse(BaseModel):
         position_check_freq (int): The position check frequency in seconds.
         min_distance_delta (int): The minimum distance delta for updates.
         max_idle_minutes (int): The maximum idle time in minutes.
-        snap_to_road (bool): Whether to snap the position to the nearest road.
         manual_route_start_enabled (bool): Whether to manually start the route.
         created_at (str): The creation timestamp of the vehicle.
     """
@@ -99,8 +94,6 @@ class VehicleResponse(BaseModel):
                                     description="The minimum distance delta for updates", example=3)
     max_idle_minutes: int = Field(..., title="Max Idle Minutes",
                                   description="The maximum idle time in minutes", example=15)
-    snap_to_road: bool = Field(..., title="Snap To Road",
-                               description="Enable snap position to nearest road", example=False)
     manual_route_start_enabled: bool = Field(..., title="Manual Route Start",
                                      description="Whether to manually start route", example=True)
     created_at: datetime = Field(..., title="Created At",
@@ -146,7 +139,6 @@ class VehiclePositionResponse(BaseModel):
                                          "position_check_freq": 15,
                                          "min_distance_delta": 3,
                                          "max_idle_minutes": 15,
-                                         "snap_to_road": False,
                                          "manual_route_start_enabled": True,
                                          "created_at": "2025-01-01T00:00:00Z"
                                      })
