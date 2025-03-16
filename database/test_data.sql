@@ -8,12 +8,12 @@ INSERT INTO vehicles (id, name, imei, color, status)
 VALUES (1, 'ArduinoTest', '862771071976313', '#800080', 'deleted');
 
 -- Create test user-vehicle assignment
-INSERT INTO user_vehicle_assignments (id, user_id, vehicle_id) 
-VALUES (1, 1, 1);
+INSERT INTO user_vehicle_assignments (id, user_id, vehicle_id, start_date, end_date) 
+VALUES (1, 1, 1, '2024-10-30 12:34:56', '2024-10-31 23:59:59');
 
 -- Create test route
 INSERT INTO routes (id, assignment_id, start_time, end_time) 
-VALUES (1, 1, '2024-10-30 12:34:56', '2024-10-31 23:59:59');
+VALUES (1, 1, '2024-10-30 12:34:56', '2024-10-31 22:59:59');
 
 -- Create test positions
 INSERT INTO positions (route_id, timestamp, location, speed) VALUES

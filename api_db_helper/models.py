@@ -57,7 +57,6 @@ class Vehicle(Base):
         position_check_freq (int): Position check frequency, default 15.
         min_distance_delta (int): Min distance delta for updates, default 3.
         max_idle_minutes (int): Max idle time in minutes, default 15.
-        snap_to_road (bool): Snap position to nearest road, default False.
         manual_route_start_enabled (bool): Manual route start, default True.
         created_at (datetime): Record creation timestamp, default current UTC time.
     """
@@ -66,13 +65,19 @@ class Vehicle(Base):
     name = Column(String(255), nullable=False)
     token = Column(String(32), unique=True, nullable=True)
     imei = Column(String(255), nullable=False)
-    status = Column(SQLEnum(VehicleStatus, name="vehicle_status_enum"), nullable=False,
-                    default=VehicleStatus.REGISTERED)
+    status = Column(
+        SQLEnum(
+            VehicleStatus,
+            name="vehicle_status_enum",
+            values_callable=lambda enum: [e.value for e in enum]
+        ),
+        nullable=False,
+        default=VehicleStatus.REGISTERED
+    )
     color = Column(String(7), nullable=False, default="#FF0000")
     position_check_freq = Column(Integer, nullable=False, default=15)
     min_distance_delta = Column(Integer, nullable=False, default=3)
     max_idle_minutes = Column(Integer, nullable=False, default=15)
-    snap_to_road = Column(Boolean, nullable=False, default=False)
     manual_route_start_enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False,
                         default=datetime.datetime.now(datetime.timezone.utc))

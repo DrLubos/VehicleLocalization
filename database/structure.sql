@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS vehicles (
     position_check_freq SMALLINT NOT NULL DEFAULT 15,-- Frequency in seconds to check the position of the vehicle
     min_distance_delta SMALLINT NOT NULL DEFAULT 3,-- Minimum distance in meters to consider a new position
     max_idle_minutes SMALLINT NOT NULL DEFAULT 15,-- Maximum time in minutes to consider the vehicle as idle
-    snap_to_road BOOLEAN NOT NULL DEFAULT FALSE,-- Flag that indicates if the positions should be snapped to the road
     manual_route_start_enabled BOOLEAN NOT NULL DEFAULT TRUE,-- Flag that indicates if the routes can be started manually
     created_at TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP-- Date when the vehicle was created
 );
