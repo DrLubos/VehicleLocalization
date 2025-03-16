@@ -33,7 +33,6 @@ class User(Base):
         password_hash (str): Hashed password, max length 255, not nullable.
         email (str): User's email, max length 150, not nullable.
         created_at (datetime): Timestamp of user creation, defaults to current UTC time.
-        last_login (datetime): Timestamp of last login, nullable.
     """
     __tablename__ = "users"
     id = Column(Integer, primary_key=True)
@@ -42,7 +41,6 @@ class User(Base):
     email = Column(String(150), nullable=False)
     created_at = Column(DateTime, nullable=False,
                         default=datetime.datetime.now(datetime.timezone.utc))
-    last_login = Column(DateTime, nullable=True)
 
 
 class Vehicle(Base):
@@ -60,7 +58,7 @@ class Vehicle(Base):
         min_distance_delta (int): Min distance delta for updates, default 3.
         max_idle_minutes (int): Max idle time in minutes, default 15.
         snap_to_road (bool): Snap position to nearest road, default False.
-        manual_route_start (bool): Manual route start, default True.
+        manual_route_start_enabled (bool): Manual route start, default True.
         created_at (datetime): Record creation timestamp, default current UTC time.
     """
     __tablename__ = "vehicles"
@@ -75,7 +73,7 @@ class Vehicle(Base):
     min_distance_delta = Column(Integer, nullable=False, default=3)
     max_idle_minutes = Column(Integer, nullable=False, default=15)
     snap_to_road = Column(Boolean, nullable=False, default=False)
-    manual_route_start = Column(Boolean, nullable=False, default=True)
+    manual_route_start_enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False,
                         default=datetime.datetime.now(datetime.timezone.utc))
 

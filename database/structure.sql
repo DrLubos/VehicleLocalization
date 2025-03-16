@@ -1,18 +1,17 @@
 -- Table that contains the users of the system
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,-- Unique identifier for the user
     username VARCHAR(50) UNIQUE NOT NULL,-- Username of the user
     password_hash TEXT NOT NULL,-- Hash of the user's password
     email VARCHAR(150) UNIQUE NOT NULL,-- Email of the user
-    created_at TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP,-- Date when the user was created
-    last_login TIMESTAMP(0) DEFAULT NULL-- Date when the user last logged in
+    created_at TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP-- Date when the user was created
 );
 
 -- Enum that contains the possible statuses for the vehicles
 CREATE TYPE vehicle_status_enum AS ENUM ('registered', 'active', 'inactive', 'deleted');
 
 -- Table that contains the vehicles
-CREATE TABLE vehicles (
+CREATE TABLE IF NOT EXISTS vehicles (
     id SERIAL PRIMARY KEY,-- Unique identifier for the vehicle
     name VARCHAR(255) NOT NULL,-- Name of the vehicle
     token CHAR(32) UNIQUE,-- Token used to authenticate the vehicle
@@ -23,12 +22,12 @@ CREATE TABLE vehicles (
     min_distance_delta SMALLINT NOT NULL DEFAULT 3,-- Minimum distance in meters to consider a new position
     max_idle_minutes SMALLINT NOT NULL DEFAULT 15,-- Maximum time in minutes to consider the vehicle as idle
     snap_to_road BOOLEAN NOT NULL DEFAULT FALSE,-- Flag that indicates if the positions should be snapped to the road
-    manual_route_start BOOLEAN NOT NULL DEFAULT TRUE,-- Flag that indicates if the routes can be started manually
+    manual_route_start_enabled BOOLEAN NOT NULL DEFAULT TRUE,-- Flag that indicates if the routes can be started manually
     created_at TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP-- Date when the vehicle was created
 );
 
 -- Table that contains the user-vehicle assignments
-CREATE TABLE user_vehicle_assignments (
+CREATE TABLE IF NOT EXISTS user_vehicle_assignments (
     id SERIAL PRIMARY KEY,-- Unique identifier for the assignment
     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,-- User that is assigned to the vehicle
     vehicle_id INT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,-- Vehicle that is assigned to the user
@@ -38,7 +37,7 @@ CREATE TABLE user_vehicle_assignments (
 );
 
 -- Table that contains the routes
-CREATE TABLE routes (
+CREATE TABLE IF NOT EXISTS routes (
     id SERIAL PRIMARY KEY,-- Unique identifier for the route
     assignment_id INT NOT NULL REFERENCES user_vehicle_assignments(id) ON DELETE CASCADE,-- Assignment that the route belongs to
     start_time TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP,-- Date when the route started
@@ -46,11 +45,11 @@ CREATE TABLE routes (
     total_distance INT NOT NULL DEFAULT 0,-- Total distance of the route in meters
     start_city VARCHAR(100),-- City where the route started
     end_city VARCHAR(100),-- City where the route ended
-    route_geom geometry(LineString, 4326)-- Geometry of the route
+    route_geom GEOMETRY(LineString, 4326)-- Geometry of the route
 );
 
 -- Table that contains the positions for each route
-CREATE TABLE positions (
+CREATE TABLE IF NOT EXISTS positions (
     id SERIAL PRIMARY KEY,-- Unique identifier for the position
     route_id INT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,-- Route that the position belongs to
     timestamp TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP,-- Date when the position was recorded

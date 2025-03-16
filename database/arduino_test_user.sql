@@ -1,6 +1,6 @@
--- Create test user for testing Arduino
+-- Create test user for testing Arduino. Username: arduino, Password: mojeheslo
 INSERT INTO users (id, username, password_hash, email) 
-VALUES (2, 'arduino', 'securehash', 'arduino@example.com');
+VALUES (2, 'arduino', E'\$2b\$12\$ZLiOXdFIZGkju6ikIt6rKuThNEJ3w2cg19oGMrMjLRmgR/nqjf7Qq', 'arduino@example.com');
 
 -- Create test vehicle for testing Arduino
 INSERT INTO vehicles (id, name, imei, color) 

@@ -1,7 +1,7 @@
 -- Create test data for the application
--- Create test user
+-- Create test user. Username: test, Password: mojeheslo
 INSERT INTO users (id, username, password_hash, email) 
-VALUES (1, 'test', 'test', 'test@example.com');
+VALUES (1, 'test', E'\$2b\$12\$ZLiOXdFIZGkju6ikIt6rKuThNEJ3w2cg19oGMrMjLRmgR/nqjf7Qq', 'test@example.com');
 
 -- Create test vehicle
 INSERT INTO vehicles (id, name, imei, color, status) 

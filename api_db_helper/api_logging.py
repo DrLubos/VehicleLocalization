@@ -35,9 +35,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             except json.JSONDecodeError:
                 body = body_str
 
-        client_ip = request.client.host if request.client else "unknown"
-        logging.info("Request: %s %s - Body: %s - IP: %s",
-                     request.method, request.url, body, client_ip)
+        logging.info("Request: %s %s - Body: %s",request.method, request.url, body)
 
         response = await call_next(request)
         return response
