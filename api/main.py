@@ -16,8 +16,8 @@ from schemas import PositionRequest, RouteCreationRequest, TokenRequest,\
     TokenResponse, TokenVerifyRequest
 from api_db_helper.db_connection import get_db
 from api_db_helper.api_logging import LoggingMiddleware
-from api_db_helper.models import Vehicle, Route, Position
-from api_db_helper.crud import get_vehicle_by_token, get_active_assignment,\
+from api_db_helper.models import Vehicle, Route, Position, VehicleStatus
+from api_db_helper.crud import get_vehicle_by_token, get_active_assignment_by_vehicle,\
     get_latest_route, get_latest_position
 
 logging.basicConfig(
@@ -165,14 +165,14 @@ async def post_location(data: PositionRequest,
     vehicle = await get_vehicle_by_token(session, data.token)
     if vehicle is None:
         raise HTTPException(status_code=404, detail="Vehicle not found")
-    if vehicle.status not in ('active', 'registered'):
+    if vehicle.status not in (VehicleStatus.ACTIVE, VehicleStatus.REGISTERED):
         raise HTTPException(status_code=403, detail="Post location is not allowed for this vehicle")
     if not -90 <= data.lat <= 90 or not -180 <= data.lon <= 180:
         raise HTTPException(status_code=400, detail="Invalid coordinates")
     lat = round(data.lat, 7)
     lon = round(data.lon, 7)
     # Check if vehicle is assigned to only one user
-    assignment = await get_active_assignment(session, vehicle.id)
+    assignment = await get_active_assignment_by_vehicle(session, vehicle.id)
     if assignment is None:
         raise HTTPException(status_code=404, detail="Vehicle is not assigned")
     # Check if exists route for this assignment
@@ -259,9 +259,9 @@ async def post_route(data: RouteCreationRequest,
     vehicle = await get_vehicle_by_token(session, data.token)
     if vehicle is None:
         raise HTTPException(status_code=404, detail="Vehicle not found")
-    if vehicle.status not in ('active', 'registered'):
+    if vehicle.status not in (VehicleStatus.ACTIVE, VehicleStatus.REGISTERED):
         raise HTTPException(status_code=403, detail="Post route is not allowed for this vehicle")
-    assignment = await get_active_assignment(session, vehicle.id)
+    assignment = await get_active_assignment_by_vehicle(session, vehicle.id)
     if assignment is None:
         raise HTTPException(status_code=404, detail="No active assignment found for this vehicle")
     new_route = Route(
@@ -299,7 +299,7 @@ async def post_token(data: TokenRequest, session: AsyncSession = Depends(get_db)
     """
     stmt = select(Vehicle).where(
         Vehicle.imei == data.imei,
-        Vehicle.status.in_(["active", "registered"])
+        Vehicle.status.in_([VehicleStatus.ACTIVE.value, VehicleStatus.REGISTERED.value])
     )
     result = await session.execute(stmt)
     vehicle = result.scalar_one_or_none()

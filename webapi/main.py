@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 
 from schemas import LoginRequest, VehicleCreate, VehicleUpdate, VehicleResponse, RouteResponse,\
-    PositionResponse
+    PositionResponse, VehiclePositionResponse
 from sqlalchemy import or_, case, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -18,6 +18,8 @@ from api_db_helper.api_logging import LoggingMiddleware
 from api_db_helper.models import User, Vehicle, UserVehicleAssignment, Route, Position,\
     VehicleStatus
 from api_db_helper.db_connection import get_db
+from api_db_helper.crud import get_active_assignments_by_user, get_assignment_for_route_and_user,\
+    get_active_assignment_by_user_and_vehicle
 
 
 logging.basicConfig(
@@ -126,8 +128,88 @@ async def login_user(login_data: LoginRequest, db: AsyncSession = Depends(get_db
         "exp": expire
     }
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    return {"token": token, "username": user_in_db.username}
 
-    return {"token": token}
+
+@app.get("/vehicles/last-position", status_code=200, response_model=list[VehiclePositionResponse])
+async def get_last_location_for_all_vehicles(current_user: User = Depends(get_current_user),
+                                             db: AsyncSession = Depends(get_db)) -> list[dict]:
+    """
+    Endpoint to get the last known location for all vehicles assigned to the current user.
+
+    Args:
+        current_user (User): The current authenticated user, injected by dependency.
+        db (AsyncSession): The database session, injected by dependency.
+
+    Returns:
+        list[dict]: List of dictionaries containing vehicle information and their last positions.
+
+    Response Model:
+        list[VehiclePositionResponse]: A list of VehiclePositionResponse objects.
+
+    Raises:
+        HTTPException: If there is an error in retrieving data from the database.
+
+    Notes:
+        - This endpoint retrieves active assignments for the current user.
+        - For each assignment, it fetches the associated vehicle and its last known position.
+        - Last known position includes latitude, longitude, timestamp, speed, and optionally city.
+        - Vehicle information includes various attributes such as id, name, imei, status, etc.
+    """
+    assignments = get_active_assignments_by_user(db, current_user.id)
+    responses = []
+    for assignment in assignments:
+        vehicle_result = await db.execute(
+            select(Vehicle).filter(Vehicle.id == assignment.vehicle_id)
+        )
+        vehicle = vehicle_result.scalars().first()
+        if not vehicle:
+            continue
+
+        last_position = None
+        route_result = await db.execute(
+            select(Route)
+            .filter(Route.assignment_id == assignment.id)
+            .order_by(Route.start_time.desc())
+            .limit(1)
+        )
+        route = route_result.scalars().first()
+        if route:
+            position_result = await db.execute(
+                select(Position)
+                .filter(Position.route_id == route.id)
+                .order_by(Position.timestamp.desc())
+                .limit(1)
+            )
+            position = position_result.scalars().first()
+            if position:
+                lat, lon = extract_lat_lon(position.location)
+                last_position = {
+                    "latitude": lat,
+                    "longitude": lon,
+                    "location_time": position.timestamp,
+                    "speed": position.speed,
+                }
+            if route.end_city:
+                last_position["city"] = route.end_city
+        response_dict = {
+            "vehicle" : {
+                "id": vehicle.id,
+                "name": vehicle.name,
+                "imei": vehicle.imei,
+                "status": vehicle.status.value,
+                "color": vehicle.color,
+                "position_check_freq": vehicle.position_check_freq,
+                "min_distance_delta": vehicle.min_distance_delta,
+                "max_idle_minutes": vehicle.max_idle_minutes,
+                "manual_route_start_enabled": vehicle.manual_route_start_enabled,
+                "created_at": vehicle.created_at,
+            },
+            "last_position": last_position,
+        }
+        responses.append(response_dict)
+    logging.info(responses)
+    return responses
 
 
 @app.get("/all-vehicles", status_code=200, response_model=list[VehicleResponse])
@@ -185,19 +267,7 @@ async def get_vehicles(current_user: User = Depends(get_current_user),
     Returns:
         list[Vehicle]: A list of vehicles assigned to the current user.
     """
-    now = datetime.datetime.utcnow()
-    assignments_result = await db.execute(
-        select(UserVehicleAssignment).filter(
-            UserVehicleAssignment.user_id == current_user.id,
-            UserVehicleAssignment.start_date <= now,
-            or_(
-                UserVehicleAssignment.end_date.is_(None),
-                UserVehicleAssignment.end_date >= now
-            )
-        )
-    )
-    assignments = assignments_result.scalars().all()
-
+    assignments = get_active_assignments_by_user(db, current_user.id)
     vehicle_ids = [assignment.vehicle_id for assignment in assignments]
     if not vehicle_ids:
         return []
@@ -229,8 +299,7 @@ async def create_vehicle(vehicle_data: VehicleCreate,
         position_check_freq=vehicle_data.position_check_freq,
         min_distance_delta=vehicle_data.min_distance_delta,
         max_idle_minutes=vehicle_data.max_idle_minutes,
-        snap_to_road=vehicle_data.snap_to_road,
-        manual_route_start=vehicle_data.manual_route_start,
+        manual_route_start_enabled=vehicle_data.manual_route_start_enabled,
     )
     db.add(new_vehicle)
 
@@ -273,18 +342,7 @@ async def update_vehicle(vehicle_id: int,
         HTTPException: If no active assignment is found for the vehicle or if the vehicle does 
         not exist.
     """
-    now = datetime.datetime.utcnow()
-    assignment_stmt = select(UserVehicleAssignment).filter(
-        UserVehicleAssignment.vehicle_id == vehicle_id,
-        UserVehicleAssignment.user_id == current_user.id,
-        UserVehicleAssignment.start_date <= now,
-        or_(
-            UserVehicleAssignment.end_date.is_(None),
-            UserVehicleAssignment.end_date >= now
-        )
-    )
-    assignment_result = await db.execute(assignment_stmt)
-    assignment = assignment_result.scalars().first()
+    assignment = get_active_assignment_by_user_and_vehicle(db, current_user.id, vehicle_id)
     if not assignment:
         raise HTTPException(status_code=404, detail="Active assignment not found for this vehicle")
 
@@ -305,10 +363,8 @@ async def update_vehicle(vehicle_id: int,
         vehicle.min_distance_delta = vehicle_data.min_distance_delta
     if vehicle_data.max_idle_minutes is not None:
         vehicle.max_idle_minutes = vehicle_data.max_idle_minutes
-    if vehicle_data.snap_to_road is not None:
-        vehicle.snap_to_road = vehicle_data.snap_to_road
-    if vehicle_data.manual_route_start is not None:
-        vehicle.manual_route_start = vehicle_data.manual_route_start
+    if vehicle_data.manual_route_start_enabled is not None:
+        vehicle.manual_route_start_enabled = vehicle_data.manual_route_start_enabled
 
     await db.commit()
     await db.refresh(vehicle)
@@ -334,23 +390,10 @@ async def unassign_vehicle(vehicle_id: int,
         HTTPException: If no active assignment is found for the vehicle.
         HTTPException: If the vehicle is not found.
     """
-    now = datetime.datetime.utcnow()
-    stmt = await db.execute(
-        select(UserVehicleAssignment).filter(
-            UserVehicleAssignment.user_id == current_user.id,
-            UserVehicleAssignment.vehicle_id == vehicle_id,
-            UserVehicleAssignment.start_date <= now,
-            or_(
-                UserVehicleAssignment.end_date.is_(None),
-                UserVehicleAssignment.end_date >= now
-            )
-        )
-    )
-    result = await db.execute(stmt)
-    assignment = result.scalars().first()
+    assignment = get_active_assignment_by_user_and_vehicle(db, current_user.id, vehicle_id)
     if not assignment:
         raise HTTPException(status_code=404, detail="Active assignment not found for this vehicle")
-    assignment.end_date = now
+    assignment.end_date = datetime.datetime.utcnow()
 
     stmt_vehicle = select(Vehicle).filter(Vehicle.id == vehicle_id)
     result_vehicle = await db.execute(stmt_vehicle)
@@ -435,18 +478,7 @@ async def toggle_vehicle_status(vehicle_id: int,
         HTTPException: If no active assignment is found for the vehicle and user, or if the vehicle
                          is not found, or if the vehicle status is not toggleable.
     """
-    now = datetime.datetime.utcnow()
-    stmt_assignment = select(UserVehicleAssignment).filter(
-        UserVehicleAssignment.vehicle_id == vehicle_id,
-        UserVehicleAssignment.user_id == current_user.id,
-        UserVehicleAssignment.start_date <= now,
-        or_(
-            UserVehicleAssignment.end_date.is_(None),
-            UserVehicleAssignment.end_date >= now
-        )
-    )
-    result_assignment = await db.execute(stmt_assignment)
-    assignment = result_assignment.scalars().first()
+    assignment = get_active_assignment_by_user_and_vehicle(db, current_user.id, vehicle_id)
     if not assignment:
         raise HTTPException(status_code=404, detail="Active assignment not found for this vehicle")
 
@@ -456,7 +488,7 @@ async def toggle_vehicle_status(vehicle_id: int,
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehicle not found")
 
-    if vehicle.status == VehicleStatus.ACTIVE:
+    if vehicle.status == VehicleStatus.ACTIVE or vehicle.status == VehicleStatus.REGISTERED:
         vehicle.status = VehicleStatus.INACTIVE
     elif vehicle.status == VehicleStatus.INACTIVE:
         vehicle.status = VehicleStatus.ACTIVE
@@ -468,6 +500,7 @@ async def toggle_vehicle_status(vehicle_id: int,
     return {
         "success": True,
         "message": f"Changed vehicle status to {vehicle.status.value} for vehicle: {vehicle.name}",
+        "new_status": vehicle.status.value
     }
 
 
@@ -531,16 +564,7 @@ async def get_route_positions(route_id: int,
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
 
-    stmt_assignment = select(UserVehicleAssignment).filter(
-        UserVehicleAssignment.id == route.assignment_id,
-        UserVehicleAssignment.user_id == current_user.id,
-        UserVehicleAssignment.start_date <= route.start_time,
-        or_(
-            UserVehicleAssignment.end_date.is_(None),
-            UserVehicleAssignment.end_date >= route.start_time
-        )
-    )
-    result_assignment = await db.execute(stmt_assignment)
+    result_assignment = get_assignment_for_route_and_user(db, route, current_user.id)
     assignment = result_assignment.scalars().first()
     if not assignment:
         raise HTTPException(status_code=403, detail="Not authorized to view this route")
@@ -585,16 +609,7 @@ async def delete_route(route_id: int,
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
 
-    stmt_assignment = select(UserVehicleAssignment).filter(
-        UserVehicleAssignment.id == route.assignment_id,
-        UserVehicleAssignment.user_id == current_user.id,
-        UserVehicleAssignment.start_date <= route.start_time,
-        or_(
-            UserVehicleAssignment.end_date.is_(None),
-            UserVehicleAssignment.end_date >= route.start_time
-        )
-    )
-    result_assignment = await db.execute(stmt_assignment)
+    result_assignment = get_assignment_for_route_and_user(db, route, current_user.id)
     assignment = result_assignment.scalars().first()
     if not assignment:
         raise HTTPException(status_code=403, detail="Not authorized to delete this route")

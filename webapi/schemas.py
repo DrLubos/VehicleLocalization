@@ -30,7 +30,7 @@ class VehicleCreate(BaseModel):
         min_distance_delta (int): The minimum distance delta for updates.
         max_idle_minutes (int): The maximum idle time in minutes.
         snap_to_road (bool): Whether to snap the position to the nearest road.
-        manual_route_start (bool): Whether to manually start the route.
+        manual_route_start_enabled (bool): Whether to manually start the route.
     """
     name: str
     imei: str
@@ -39,7 +39,7 @@ class VehicleCreate(BaseModel):
     min_distance_delta: int
     max_idle_minutes: int
     snap_to_road: bool
-    manual_route_start: bool
+    manual_route_start_enabled: bool
 
 
 class VehicleUpdate(BaseModel):
@@ -53,7 +53,7 @@ class VehicleUpdate(BaseModel):
         min_distance_delta (int, optional): The minimum distance delta for updates.
         max_idle_minutes (int, optional): The maximum idle time in minutes.
         snap_to_road (bool, optional): Whether to snap the position to the nearest road.
-        manual_route_start (bool, optional): Whether to manually start the route.
+        manual_route_start_enabled (bool, optional): Whether to manually start the route.
     """
     name: Optional[str] = None
     status: Optional[VehicleStatus] = None
@@ -62,7 +62,7 @@ class VehicleUpdate(BaseModel):
     min_distance_delta: Optional[int] = None
     max_idle_minutes: Optional[int] = None
     snap_to_road: Optional[bool] = None
-    manual_route_start: Optional[bool] = None
+    manual_route_start_enabled: Optional[bool] = None
 
 
 class VehicleResponse(BaseModel):
@@ -80,7 +80,7 @@ class VehicleResponse(BaseModel):
         min_distance_delta (int): The minimum distance delta for updates.
         max_idle_minutes (int): The maximum idle time in minutes.
         snap_to_road (bool): Whether to snap the position to the nearest road.
-        manual_route_start (bool): Whether to manually start the route.
+        manual_route_start_enabled (bool): Whether to manually start the route.
         created_at (str): The creation timestamp of the vehicle.
     """
     id: int = Field(..., title="ID", description="The ID of the vehicle", example=1)
@@ -101,10 +101,64 @@ class VehicleResponse(BaseModel):
                                   description="The maximum idle time in minutes", example=15)
     snap_to_road: bool = Field(..., title="Snap To Road",
                                description="Enable snap position to nearest road", example=False)
-    manual_route_start: bool = Field(..., title="Manual Route Start",
+    manual_route_start_enabled: bool = Field(..., title="Manual Route Start",
                                      description="Whether to manually start route", example=True)
     created_at: datetime = Field(..., title="Created At",
                             description="Creation time of vehicle", example="2025-01-01T00:00:00Z")
+
+
+class LastPosition(BaseModel):
+    """
+    LastPosition schema for vehicle localization.
+
+    Attributes:
+        city (Optional[str]): The city where the vehicle is located. Example: "New York".
+        latitude (float): The latitude coordinate of the vehicle's location. Example: 48.1486.
+        longitude (float): The longitude coordinate of the vehicle's location. Example: 17.1077.
+        location_time (datetime): The timestamp of when the vehicle was at the given location.
+            Example: "2023-03-14T18:41:00Z".
+        speed (float): The speed of the vehicle at the given location. Example: 50.0.
+    """
+    city: Optional[str] = Field(None, title="City", example="New York")
+    latitude: float = Field(..., title="Latitude", example=48.1486)
+    longitude: float = Field(..., title="Longitude", example=17.1077)
+    location_time: datetime = Field(..., title="Location Time", example="2023-03-14T18:41:00Z")
+    speed: float = Field(..., title="Speed", example=50.0)
+
+
+class VehiclePositionResponse(BaseModel):
+    """
+    VehiclePositionResponse
+
+    Attributes:
+        vehicle (VehicleResponse): The vehicle information.
+        last_position (LastPosition, optional): Most recent position of the vehicle.
+    """
+    vehicle: VehicleResponse = Field(..., title="Vehicle",
+                                     description="The vehicle information",
+                                     example={
+                                         "id": 1,
+                                         "name": "Car",
+                                         "token": "abcdef1234567890",
+                                         "imei": "123456789012345",
+                                         "status": "registered",
+                                         "color": "#FF0000",
+                                         "position_check_freq": 15,
+                                         "min_distance_delta": 3,
+                                         "max_idle_minutes": 15,
+                                         "snap_to_road": False,
+                                         "manual_route_start_enabled": True,
+                                         "created_at": "2025-01-01T00:00:00Z"
+                                     })
+    last_position: Optional[LastPosition] = Field(None, title="Last Position",
+                                                  description="Most recent position of the vehicle",
+                                                  example={
+                                                      "city": "New York",
+                                                      "latitude": 48.1486,
+                                                      "longitude": 17.1077,
+                                                      "location_time": "2023-03-14T18:41:00Z",
+                                                      "speed": 50.0
+                                                  })
 
 
 class RouteResponse(BaseModel):
