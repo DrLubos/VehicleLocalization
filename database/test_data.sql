@@ -5,11 +5,11 @@ VALUES (1, 'test', E'\$2b\$12\$ZLiOXdFIZGkju6ikIt6rKuThNEJ3w2cg19oGMrMjLRmgR/nqj
 
 -- Create test vehicle
 INSERT INTO vehicles (id, name, imei, color, status) 
-VALUES (1, 'ArduinoTest', '862771071976313', '#800080', 'deleted');
+VALUES (1, 'ArduinoTest', 'TEST', '#800080', 'inactive');
 
 -- Create test user-vehicle assignment
-INSERT INTO user_vehicle_assignments (id, user_id, vehicle_id, start_date, end_date) 
-VALUES (1, 1, 1, '2024-10-30 12:34:56', '2024-10-31 23:59:59');
+INSERT INTO user_vehicle_assignments (id, user_id, vehicle_id, start_date) 
+VALUES (1, 1, 1, '2024-10-30 12:34:56');
 
 -- Create test route
 INSERT INTO routes (id, assignment_id, start_time, end_time) 

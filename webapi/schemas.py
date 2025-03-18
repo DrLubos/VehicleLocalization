@@ -155,12 +155,19 @@ class VehiclePositionResponse(BaseModel):
 
 class RouteResponse(BaseModel):
     """
-    RouteResponse schema for API response.
+    RouteResponse schema for representing route information.
 
     Attributes:
         id (int): The ID of the route.
         assignment_id (int): The ID of the user vehicle assignment.
-        start_time (str): The start time of the route.
+        start_time (datetime): The start time of the route.
+        end_time (Optional[datetime]): The end time of the route.
+        total_distance (int): Total distance of the route.
+        start_city (Optional[str]): Starting city of the route.
+        start_coords (str): Starting coordinates of the route.
+        end_city (Optional[str]): Ending city of the route.
+        end_coords (str): Ending coordinates of the route.
+        route_geometry (Optional[dict]): GeoJSON representation of the route.
     """
     id: int = Field(..., title="ID", description="The ID of the route", example=1)
     assignment_id: int = Field(..., title="Assignment ID",
@@ -174,11 +181,22 @@ class RouteResponse(BaseModel):
                                   description="Total distance of the route", example=100)
     start_city: Optional[str] = Field(None, title="Start City",
                             description="Starting city of the route", example="New York")
+    start_coords: str = Field(..., title="Start Coordinates",
+                            description="Starting coordinates of route", example="40.7128 74.0060")
     end_city: Optional[str] = Field(None, title="End City",
                           description="Ending city of the route", example="Los Angeles")
-    route_geometry: Optional[str] = Field(None, title="Route Geometry",
-                                          description="Encoded polyline of the route",
-                                          example="LINESTRING(30 10, 10 30, 40 40)")
+    end_coords: str = Field(..., title="End Coordinates",
+                          description="Ending coordinates of the route", example="34.0522 118.2437")
+    route_geometry: Optional[dict] = Field(None, title="Route Geometry",
+                                            description="GeoJSON representation of the route",
+                                            example={
+                                                "type": "LineString",
+                                                "coordinates": [
+                                                    [30, 10],
+                                                    [10, 30],
+                                                    [40, 40]
+                                                ]
+                                            })
 
 
 class PositionResponse(BaseModel):

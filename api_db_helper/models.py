@@ -40,7 +40,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     email = Column(String(150), nullable=False)
     created_at = Column(DateTime, nullable=False,
-                        default=datetime.datetime.now(datetime.timezone.utc))
+                        default=datetime.datetime.utcnow())
 
 
 class Vehicle(Base):
@@ -80,7 +80,7 @@ class Vehicle(Base):
     max_idle_minutes = Column(Integer, nullable=False, default=15)
     manual_route_start_enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False,
-                        default=datetime.datetime.now(datetime.timezone.utc))
+                        default=datetime.datetime.utcnow())
 
 
 class UserVehicleAssignment(Base):
@@ -99,7 +99,7 @@ class UserVehicleAssignment(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     vehicle_id = Column(Integer, ForeignKey("vehicles.id", ondelete="CASCADE"), nullable=False)
     start_date = Column(DateTime, nullable=False,
-                        default=datetime.datetime.now(datetime.timezone.utc))
+                        default=datetime.datetime.utcnow())
     end_date = Column(DateTime, nullable=True)
 
 
@@ -122,7 +122,7 @@ class Route(Base):
     assignment_id = Column(Integer, ForeignKey("user_vehicle_assignments.id",
                                                ondelete="CASCADE"), nullable=False)
     start_time = Column(DateTime, nullable=False,
-                        default=datetime.datetime.now(datetime.timezone.utc))
+                        default=datetime.datetime.utcnow())
     end_time = Column(DateTime, nullable=True)
     total_distance = Column(Integer, nullable=False, default=0)
     start_city = Column(String(100), nullable=False)
@@ -145,6 +145,22 @@ class Position(Base):
     id = Column(Integer, primary_key=True)
     route_id = Column(Integer, ForeignKey("routes.id", ondelete="CASCADE"), nullable=False)
     timestamp = Column(DateTime, nullable=False,
-                       default=datetime.datetime.now(datetime.timezone.utc))
+                       default=datetime.datetime.utcnow())
     location = Column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
     speed = Column(Float, nullable=False)
+
+
+def extract_lat_lon_from_wkt(wkt: str) -> tuple[float, float]:
+    """
+    Extracts latitude and longitude from a WKT (Well-Known Text) POINT string.
+    You need to call ST_AsText function in the query to get the POINT string.
+
+    Args:
+        wkt (str): A WKT POINT string in the format "POINT(lon lat)".
+
+    Returns:
+        tuple[float, float]: A tuple containing the latitude and longitude as floats.
+    """
+    coords = wkt.lstrip("POINT(").rstrip(")").split()
+    lon, lat = float(coords[0]), float(coords[1])
+    return lat, lon

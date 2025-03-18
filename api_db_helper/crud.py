@@ -4,7 +4,7 @@ This module contains functions that perform CRUD operations on the database.
 import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 
 from api_db_helper.models import Vehicle, UserVehicleAssignment, Route, Position
 
@@ -188,9 +188,13 @@ async def get_latest_position(session: AsyncSession, route_id: int) -> Position 
         Position | None: The latest Position for the given route, or None if no position is found.
     """
     result = await session.execute(
-        select(Position)
+        select(Position.id,
+               Position.route_id,
+               Position.timestamp,
+               func.ST_AsText(Position.location).label("location"),
+               Position.speed)
         .where(Position.route_id == route_id)
         .order_by(Position.timestamp.desc())
         .limit(1)
     )
-    return result.scalar_one_or_none()
+    return result.first()

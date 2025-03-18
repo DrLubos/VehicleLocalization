@@ -5,18 +5,19 @@ import datetime
 import logging
 import bcrypt
 import jwt
+import json
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 
 from schemas import LoginRequest, VehicleCreate, VehicleUpdate, VehicleResponse, RouteResponse,\
     PositionResponse, VehiclePositionResponse
-from sqlalchemy import or_, case, delete
+from sqlalchemy import or_, case, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from api_db_helper.api_logging import LoggingMiddleware
 from api_db_helper.models import User, Vehicle, UserVehicleAssignment, Route, Position,\
-    VehicleStatus
+    VehicleStatus, extract_lat_lon_from_wkt
 from api_db_helper.db_connection import get_db
 from api_db_helper.crud import get_active_assignments_by_user, get_assignment_for_route_and_user,\
     get_active_assignment_by_user_and_vehicle
@@ -53,19 +54,37 @@ app.add_middleware(
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 
-def extract_lat_lon(wkt: str) -> tuple[float, float]:
+def clamp(value: int, min_val: int = 0, max_val: int = 255) -> int:
     """
-    Extracts latitude and longitude from a WKT (Well-Known Text) POINT string.
+    Clamps an integer value between a minimum and maximum value.
 
     Args:
-        wkt (str): A WKT POINT string in the format "POINT(lon lat)".
+        value (int): The integer value to be clamped.
+        min_val (int, optional): The minimum value to clamp to. Defaults to 0.
+        max_val (int, optional): The maximum value to clamp to. Defaults to 255.
 
     Returns:
-        tuple[float, float]: A tuple containing the latitude and longitude as floats.
+        int: The clamped value.
     """
-    coords = wkt.lstrip("POINT(").rstrip(")").split()
-    lon, lat = float(coords[0]), float(coords[1])
-    return lat, lon
+    return max(min_val, min(value, max_val))
+
+
+def trim_field(field: str, max_length: int = 255) -> str:
+    """
+    Trims the input field by removing leading and trailing whitespace and ensures it does not exceed
+    the specified maximum length.
+    Args:
+        field (str): The input string to be trimmed.
+        max_length (int, optional): Maximum allowed length of the trimmed string. Defaults to 255.
+    Returns:
+        str: The trimmed string, truncated to the maximum length if necessary.
+    Raises:
+        ValueError: If the trimmed field is empty.
+    """
+    field = field.strip()
+    if len(field) == 0:
+        raise ValueError("Field cannot be empty")
+    return field if len(field) <= max_length else field[:max_length]
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme),
@@ -156,7 +175,7 @@ async def get_last_location_for_all_vehicles(current_user: User = Depends(get_cu
         - Last known position includes latitude, longitude, timestamp, speed, and optionally city.
         - Vehicle information includes various attributes such as id, name, imei, status, etc.
     """
-    assignments = get_active_assignments_by_user(db, current_user.id)
+    assignments = await get_active_assignments_by_user(db, current_user.id)
     responses = []
     for assignment in assignments:
         vehicle_result = await db.execute(
@@ -176,14 +195,18 @@ async def get_last_location_for_all_vehicles(current_user: User = Depends(get_cu
         route = route_result.scalars().first()
         if route:
             position_result = await db.execute(
-                select(Position)
+                select(Position.id,
+                       Position.route_id,
+                       Position.timestamp,
+                       func.ST_AsText(Position.location).label("location"),
+                       Position.speed)
                 .filter(Position.route_id == route.id)
                 .order_by(Position.timestamp.desc())
                 .limit(1)
             )
-            position = position_result.scalars().first()
+            position = position_result.first()
             if position:
-                lat, lon = extract_lat_lon(position.location)
+                lat, lon = extract_lat_lon_from_wkt(position.location)
                 last_position = {
                     "latitude": lat,
                     "longitude": lon,
@@ -267,7 +290,7 @@ async def get_vehicles(current_user: User = Depends(get_current_user),
     Returns:
         list[Vehicle]: A list of vehicles assigned to the current user.
     """
-    assignments = get_active_assignments_by_user(db, current_user.id)
+    assignments = await get_active_assignments_by_user(db, current_user.id)
     vehicle_ids = [assignment.vehicle_id for assignment in assignments]
     if not vehicle_ids:
         return []
@@ -293,13 +316,13 @@ async def create_vehicle(vehicle_data: VehicleCreate,
         Vehicle: The newly created vehicle.
     """
     new_vehicle = Vehicle(
-        name=vehicle_data.name,
-        imei=vehicle_data.imei,
-        color=vehicle_data.color,
-        position_check_freq=vehicle_data.position_check_freq,
-        min_distance_delta=vehicle_data.min_distance_delta,
-        max_idle_minutes=vehicle_data.max_idle_minutes,
-        manual_route_start_enabled=vehicle_data.manual_route_start_enabled,
+        name = trim_field(vehicle_data.name),
+        imei = trim_field(vehicle_data.imei),
+        color = vehicle_data.color,
+        position_check_freq = clamp(vehicle_data.position_check_freq, min_val = 1),
+        min_distance_delta = clamp(vehicle_data.min_distance_delta),
+        max_idle_minutes = clamp(vehicle_data.max_idle_minutes, min_val = 1),
+        manual_route_start_enabled = vehicle_data.manual_route_start_enabled,
     )
     db.add(new_vehicle)
 
@@ -307,7 +330,7 @@ async def create_vehicle(vehicle_data: VehicleCreate,
 
     new_user_vehicle_assignment = UserVehicleAssignment(
         user_id=current_user.id,
-        vehicle_id=new_vehicle
+        vehicle_id=new_vehicle.id,
     )
     db.add(new_user_vehicle_assignment)
 
@@ -342,7 +365,7 @@ async def update_vehicle(vehicle_id: int,
         HTTPException: If no active assignment is found for the vehicle or if the vehicle does 
         not exist.
     """
-    assignment = get_active_assignment_by_user_and_vehicle(db, current_user.id, vehicle_id)
+    assignment = await get_active_assignment_by_user_and_vehicle(db, current_user.id, vehicle_id)
     if not assignment:
         raise HTTPException(status_code=404, detail="Active assignment not found for this vehicle")
 
@@ -352,17 +375,17 @@ async def update_vehicle(vehicle_id: int,
         raise HTTPException(status_code=404, detail="Vehicle not found")
 
     if vehicle_data.name is not None:
-        vehicle.name = vehicle_data.name
+        vehicle.name = trim_field(vehicle_data.name)
     if vehicle_data.status is not None:
         vehicle.status = vehicle_data.status
     if vehicle_data.color is not None:
         vehicle.color = vehicle_data.color
     if vehicle_data.position_check_freq is not None:
-        vehicle.position_check_freq = vehicle_data.position_check_freq
+        vehicle.position_check_freq = clamp(vehicle_data.position_check_freq, min_val = 1)
     if vehicle_data.min_distance_delta is not None:
-        vehicle.min_distance_delta = vehicle_data.min_distance_delta
+        vehicle.min_distance_delta = clamp(vehicle_data.min_distance_delta)
     if vehicle_data.max_idle_minutes is not None:
-        vehicle.max_idle_minutes = vehicle_data.max_idle_minutes
+        vehicle.max_idle_minutes = clamp(vehicle_data.max_idle_minutes, min_val = 1)
     if vehicle_data.manual_route_start_enabled is not None:
         vehicle.manual_route_start_enabled = vehicle_data.manual_route_start_enabled
 
@@ -390,7 +413,7 @@ async def unassign_vehicle(vehicle_id: int,
         HTTPException: If no active assignment is found for the vehicle.
         HTTPException: If the vehicle is not found.
     """
-    assignment = get_active_assignment_by_user_and_vehicle(db, current_user.id, vehicle_id)
+    assignment = await get_active_assignment_by_user_and_vehicle(db, current_user.id, vehicle_id)
     if not assignment:
         raise HTTPException(status_code=404, detail="Active assignment not found for this vehicle")
     assignment.end_date = datetime.datetime.utcnow()
@@ -478,7 +501,7 @@ async def toggle_vehicle_status(vehicle_id: int,
         HTTPException: If no active assignment is found for the vehicle and user, or if the vehicle
                          is not found, or if the vehicle status is not toggleable.
     """
-    assignment = get_active_assignment_by_user_and_vehicle(db, current_user.id, vehicle_id)
+    assignment = await get_active_assignment_by_user_and_vehicle(db, current_user.id, vehicle_id)
     if not assignment:
         raise HTTPException(status_code=404, detail="Active assignment not found for this vehicle")
 
@@ -504,7 +527,7 @@ async def toggle_vehicle_status(vehicle_id: int,
     }
 
 
-@app.get("/vehicles/{vehicle_id}/routes", status_code=200, response_model=RouteResponse)
+@app.get("/vehicles/{vehicle_id}/routes", status_code=200, response_model=list[RouteResponse])
 async def get_vehicle_routes(vehicle_id: int,
                              current_user: User = Depends(get_current_user),
                              db: AsyncSession = Depends(get_db),
@@ -522,7 +545,14 @@ async def get_vehicle_routes(vehicle_id: int,
         list[Route]: A list of Route objects associated with the specified vehicle and user.
     """
     stmt = (
-       select(Route)
+       select(Route.id,
+              Route.assignment_id,
+              Route.start_time,
+              Route.end_time,
+              Route.total_distance,
+              Route.start_city,
+              Route.end_city,
+              func.ST_AsGeoJSON(Route.route_geom).label("route_geometry"))
        .join(UserVehicleAssignment, Route.assignment_id == UserVehicleAssignment.id)
        .filter(
           UserVehicleAssignment.vehicle_id == vehicle_id,
@@ -537,7 +567,38 @@ async def get_vehicle_routes(vehicle_id: int,
        .limit(number_of_routes)
     )
     result_routes = await db.execute(stmt)
-    return result_routes.scalars().all()
+    route_list = result_routes.all()
+    respone = []
+    for route in route_list:
+        route_geojson = json.loads(route.route_geometry) if route.route_geometry else None
+        route_dict = {
+            "id": route.id,
+            "assignment_id": route.assignment_id,
+            "start_time": route.start_time,
+            "end_time": route.end_time,
+            "total_distance": route.total_distance,
+            "start_city": route.start_city,
+            "start_coords": "No location data",
+            "end_city": route.end_city,
+            "end_coords": "No location data",
+            "route_geometry": route_geojson,
+        }
+        stmt_positions = (
+            select(Position.id,
+                    Position.route_id,
+                    func.ST_AsText(Position.location).label("location"))
+            .filter(Position.route_id == route.id)
+            .order_by(Position.timestamp)
+        )
+        result_positions = await db.execute(stmt_positions)
+        positions = result_positions.all()
+        if positions:
+            first_lat, first_lon = extract_lat_lon_from_wkt(positions[0].location)
+            last_lat, last_lon = extract_lat_lon_from_wkt(positions[-1].location)
+            route_dict["start_coords"] = f"{first_lat} {first_lon}"
+            route_dict["end_coords"] = f"{last_lat} {last_lon}"
+        respone.append(route_dict)
+    return respone
 
 
 @app.get("/routes/{route_id}/positions", status_code=200, response_model=PositionResponse)
@@ -564,16 +625,23 @@ async def get_route_positions(route_id: int,
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
 
-    result_assignment = get_assignment_for_route_and_user(db, route, current_user.id)
+    result_assignment = await get_assignment_for_route_and_user(db, route, current_user.id)
     assignment = result_assignment.scalars().first()
     if not assignment:
         raise HTTPException(status_code=403, detail="Not authorized to view this route")
 
-    result_positions = await db.execute(select(Position).filter(Position.route_id == route_id))
-    positions = result_positions.scalars().all()
+    result_positions = await db.execute(
+        select(
+            Position.id,
+            Position.route_id,
+            Position.timestamp,
+            func.ST_AsText(Position.location).label("location"),
+            Position.speed)
+        .filter(Position.route_id == route_id))
+    positions = result_positions.all()
     response_positions = []
     for pos in positions:
-        lat, lon = extract_lat_lon(pos.location)
+        lat, lon = extract_lat_lon_from_wkt(pos.location)
         response_positions.append({
             "id": pos.id,
             "route_id": pos.route_id,
@@ -609,7 +677,7 @@ async def delete_route(route_id: int,
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
 
-    result_assignment = get_assignment_for_route_and_user(db, route, current_user.id)
+    result_assignment = await get_assignment_for_route_and_user(db, route, current_user.id)
     assignment = result_assignment.scalars().first()
     if not assignment:
         raise HTTPException(status_code=403, detail="Not authorized to delete this route")

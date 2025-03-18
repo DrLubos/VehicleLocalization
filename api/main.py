@@ -16,7 +16,8 @@ from schemas import PositionRequest, RouteCreationRequest, TokenRequest,\
     TokenResponse, TokenVerifyRequest
 from api_db_helper.db_connection import get_db
 from api_db_helper.api_logging import LoggingMiddleware
-from api_db_helper.models import Vehicle, Route, Position, VehicleStatus
+from api_db_helper.models import Vehicle, Route, Position, VehicleStatus,\
+    extract_lat_lon_from_wkt
 from api_db_helper.crud import get_vehicle_by_token, get_active_assignment_by_vehicle,\
     get_latest_route, get_latest_position
 
@@ -89,27 +90,6 @@ async def get_city_by_coords(lat: float, lon: float) -> str:
     round(lon, 8)
     #TODO: Implement city name retrieval based on coordinates
     return "CityName"
-
-
-def extract_coords(point_geom: WKTElement) -> Tuple[float, float]:
-    """
-    Extracts latitude and longitude coordinates from a WKTElement.
-
-    Args:
-        point_geom (WKTElement): A WKTElement containing the point geometry in WKT format.
-
-    Returns:
-        Tuple[float, float]: A tuple containing the latitude and longitude as floats.
-                             Returns (0.0, 0.0) if extraction fails.
-    """
-    try:
-        wkt_str = str(point_geom)
-        parts = wkt_str.strip().split("(")[1].split(")")[0].split()
-        lon_val = float(parts[0])
-        lat_val = float(parts[1])
-        return lat_val, lon_val
-    except (IndexError, ValueError):
-        return (0.0, 0.0)
 
 
 async def update_route_geom(session: AsyncSession, route_id: int, lon: float, lat: float) -> None:
@@ -211,7 +191,7 @@ async def post_location(data: PositionRequest,
     last_position = await get_latest_position(session, route_id)
     additional_distance = 0
     if last_position is not None:
-        last_lat, last_lon = extract_coords(last_position.location)
+        last_lat, last_lon = extract_lat_lon_from_wkt(last_position.location)
         additional_distance = calculate_distance(last_lat, last_lon, lat, lon)
         if not create_new_route:
             route.total_distance += int(additional_distance)
