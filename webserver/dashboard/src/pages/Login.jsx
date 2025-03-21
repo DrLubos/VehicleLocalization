@@ -8,12 +8,15 @@ import {
   Heading,
   VStack,
   useColorModeValue,
+  Divider,
 } from "@chakra-ui/react";
 import { useNavigate } from "react-router-dom";
+import RegistrationModal from "../components/RegistrationModal";
 
 function Login({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [isRegOpen, setIsRegOpen] = useState(false);
   const navigate = useNavigate();
   const bg = useColorModeValue("white", "gray.700");
 
@@ -47,6 +50,27 @@ function Login({ onLogin }) {
     } catch (error) {
       console.error("Login failed:", error);
       alert("Login failed, please check your credentials.");
+    }
+  };
+
+  const handleRegister = async ({ username, email, password }) => {
+    try {
+      const response = await fetch("https://webapi.vehiclemap.xyz/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, email, password }),
+      });
+      if (!response.ok) {
+        throw new Error(`Registration failed with status ${response.status}`);
+      }
+      const data = await response.json();
+      alert("Registration successful. Please login.");
+      setIsRegOpen(false);
+    } catch (error) {
+      console.error("Registration failed:", error);
+      alert("Registration failed. " + error.message);
     }
   };
 
@@ -85,6 +109,15 @@ function Login({ onLogin }) {
             </Button>
           </VStack>
         </form>
+        <Divider my={4} />
+        <Button colorScheme="teal" variand="outline" width="full" onClick={() => setIsRegOpen(true)}>
+          Create New User
+        </Button>
+        <RegistrationModal
+          isOpen={isRegOpen}
+          onClose={() => setIsRegOpen(false)}
+          onRegister={handleRegister}
+        />
       </Box>
     </Box>
   );

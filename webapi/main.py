@@ -3,15 +3,15 @@ This module contains API endpoints for interaction with the database from web cl
 """
 import datetime
 import logging
+import json
 import bcrypt
 import jwt
-import json
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 
 from schemas import LoginRequest, VehicleCreate, VehicleUpdate, VehicleResponse, RouteResponse,\
-    PositionResponse, VehiclePositionResponse
+    PositionResponse, VehiclePositionResponse, RegistrationRequest
 from sqlalchemy import or_, case, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -85,6 +85,52 @@ def trim_field(field: str, max_length: int = 255) -> str:
     if len(field) == 0:
         raise ValueError("Field cannot be empty")
     return field if len(field) <= max_length else field[:max_length]
+
+
+@app.post("/register", status_code=201)
+async def register_user(registration_data: RegistrationRequest,
+                        db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Registers a new user in the system.
+
+    This endpoint handles user registration by validating the provided username 
+    and email for uniqueness, hashing the password, and storing the new user 
+    in the database.
+
+    Args:
+        registration_data (RegistrationRequest): The registration details provided 
+            by the user, including username, email, and password.
+        db (AsyncSession): The database session dependency used to interact 
+            with the database.
+
+    Returns:
+        dict: A dictionary containing the username and ID of the newly registered user.
+
+    Raises:
+        HTTPException: If the username already exists in the database (status code 400).
+        HTTPException: If the email already exists in the database (status code 400).
+    """
+    stmt = select(User).filter(User.username == registration_data.username)
+    result = await db.execute(stmt)
+    existing_user = result.scalars().first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    stmt = select(User).filter(User.email == registration_data.email)
+    result = await db.execute(stmt)
+    existing_user = result.scalars().first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already exists")
+    hashed_pw = bcrypt.hashpw(
+        registration_data.password.encode('utf-8'), bcrypt.gensalt()
+        ).decode('utf-8')
+    new_user = User(
+        username=registration_data.username,
+        email=registration_data.email,
+        password_hash=hashed_pw)
+    db.add(new_user)
+    await db.commit()
+    await db.refresh(new_user)
+    return {"username": new_user.username, "id": new_user.id}
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme),

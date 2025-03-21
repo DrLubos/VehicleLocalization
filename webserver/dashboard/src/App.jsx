@@ -19,9 +19,7 @@ function App() {
     try {
       const payload = JSON.parse(atob(storedToken.split(".")[1]));
       const expTime = payload.exp * 1000;
-      console.log("Token expires in:", expTime);
       const delay = expTime - Date.now();
-      console.log("Delay:", delay);
       if (delay > 0) {
         const timer = setTimeout(() => {
           logoutUser();

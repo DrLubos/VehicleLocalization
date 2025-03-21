@@ -6,6 +6,24 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from api_db_helper.models import VehicleStatus
 
+
+class RegistrationRequest(BaseModel):
+    """
+    RegistrationRequest schema for user registration.
+
+    Attributes:
+        username (str): Username for registration. Example: "user".
+        email (str): Email address for registration. Example: "name@domain.com".
+        password (str): Password for registration. Example: "password".
+    """
+    username: str = Field(..., title="Username",
+                          description="Username for registration", example="user")
+    email: str = Field(..., title="Email",
+                       description="Email for registration", example="name@domain.com")
+    password: str = Field(..., title="Password",
+                          description="Password for registration", example="password")
+
+
 class LoginRequest(BaseModel):
     """
     LoginRequest schema for user login.
