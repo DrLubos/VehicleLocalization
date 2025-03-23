@@ -88,7 +88,7 @@ async def get_city_by_coords(lat: float, lon: float) -> str:
     round(lat, 8)
     round(lon, 8)
     #TODO: Implement city name retrieval based on coordinates
-    return "CityName"
+    return ""
 
 
 async def update_route_geom(session: AsyncSession, route_id: int, lon: float, lat: float) -> None:
@@ -165,7 +165,8 @@ async def post_location(data: PositionRequest,
         if latest_pos is not None:
             diff = (now - latest_pos.timestamp).total_seconds()
             if diff > vehicle.max_idle_minutes * 60:
-                city = await get_city_by_coords(latest_pos.location.y, latest_pos.location.x)
+                last_lat, last_lon = extract_lat_lon_from_wkt(latest_pos.location)
+                city = await get_city_by_coords(last_lat, last_lon)
                 route.end_time = latest_pos.timestamp
                 route.end_city = city
                 create_new_route = True
@@ -185,7 +186,7 @@ async def post_location(data: PositionRequest,
             start_time=now,
             start_city=start_city,
             end_city=None,
-            route_geom=WKTElement(f"POINT({lon} {lat})", srid=4326)
+            #route_geom=WKTElement(f"POINT({lon} {lat})", srid=4326)
         )
         session.add(new_route)
         await session.flush()
@@ -325,7 +326,7 @@ async def post_token(data: TokenRequest, session: AsyncSession = Depends(get_db)
         token=new_token,
         position_check_freq=vehicle.position_check_freq,
         min_distance_delta=vehicle.min_distance_delta,
-        send_start_message=vehicle.manual_route_start_enabled
+        manual_start=vehicle.manual_route_start_enabled
     )
 
 

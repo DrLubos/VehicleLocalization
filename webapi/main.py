@@ -20,7 +20,7 @@ from api_db_helper.models import User, Vehicle, UserVehicleAssignment, Route, Po
     VehicleStatus, extract_lat_lon_from_wkt
 from api_db_helper.db_connection import get_db
 from api_db_helper.crud import get_active_assignments_by_user, get_assignment_for_route_and_user,\
-    get_active_assignment_by_user_and_vehicle
+    get_active_assignment_by_user_and_vehicle, get_latest_position
 
 
 logging.basicConfig(
@@ -241,17 +241,7 @@ async def get_last_location_for_all_vehicles(current_user: User = Depends(get_cu
         routes = route_result.scalars().all()
 
         for route in routes:
-            position_result = await db.execute(
-                select(Position.id,
-                       Position.route_id,
-                       Position.timestamp,
-                       func.ST_AsText(Position.location).label("location"),
-                       Position.speed)
-                .filter(Position.route_id == route.id)
-                .order_by(Position.timestamp.desc())
-                .limit(1)
-            )
-            position = position_result.first()
+            position = await get_latest_position(db, route.id)
             if position:
                 lat, lon = extract_lat_lon_from_wkt(position.location)
                 last_position = {
@@ -263,6 +253,7 @@ async def get_last_location_for_all_vehicles(current_user: User = Depends(get_cu
                 if route.end_city:
                     last_position["city"] = route.end_city
                 break
+
         response_dict = {
             "vehicle" : {
                 "id": vehicle.id,
@@ -279,6 +270,7 @@ async def get_last_location_for_all_vehicles(current_user: User = Depends(get_cu
             "last_position": last_position,
         }
         responses.append(response_dict)
+
     logging.info(responses)
     return responses
 
