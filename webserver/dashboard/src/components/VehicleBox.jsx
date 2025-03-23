@@ -49,6 +49,14 @@ const formatTimestamp = (timestamp) => {
   return `${day}.${month}.${year} ${hours}:${minutes} UTC`;
 };
 
+const formatCoordinates = (lat, lon) => {
+  const latAbs = Math.abs(lat).toFixed(4);
+  const lonAbs = Math.abs(lon).toFixed(4);
+  const latCard = lat >= 0 ? "N" : "S";
+  const lonCard = lon >= 0 ? "E" : "W";
+  return `${latAbs}° ${latCard}, ${lonAbs}° ${lonCard}`;
+};
+
 const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
   const [localStatus, setLocalStatus] = useState(vehicle.status);
   const [isOpen, setIsOpen] = useState(false);
@@ -231,56 +239,59 @@ const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
   };
 
   return (
-    <Box borderWidth="1px" borderRadius="md" p={2} cursor="pointer" mb={0} onClick={toggleDropdown}>
-      <Flex align="center">
-        <Box
-          w="40px"
-          h="40px"
-          bg={
-            localStatus === "inactive"
-              ? darkenHex(vehicle.color, 40)
-              : vehicle.color
-          }
-          borderRadius="md"
-          mr={3}
-          display="flex"
-          alignItems="center"
-          justifyContent="center"
-          position="relative"
-          cursor="pointer"
-          onClick={(e) => {
-            e.stopPropagation();
-            fetchRoutes();
-          }}
-          title="Click to refresh routes"
-        >
-          <RepeatIcon boxSize="5" color="white" />
-        </Box>
-        <Box flex="1">
-          <Text fontWeight="bold">{vehicle.name}</Text>
-          {vehicle.last_position && (
-            <Text fontSize="xs" color="gray.500">
-              ({vehicle.last_position.latitude.toFixed(4)},{" "}
-              {vehicle.last_position.longitude.toFixed(4)})<br />
-              {formatTimestamp(vehicle.last_position.location_time)}
-            </Text>
-          )}
-        </Box>
-        <IconButton
-          icon={
-            <ChevronDownIcon
-              transform={isOpen ? "rotate(180deg)" : "rotate(0deg)"}
-              transition="transform 0.3s ease"
-            />
-          }
-          variant="ghost"
-          aria-label="Toggle Options"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleDropdown();
-          }}
-        />
-      </Flex>
+    <Box borderWidth="1px" borderRadius="md" p={2} cursor="pointer" mb={0}>
+      <Box onClick={toggleDropdown}>
+        <Flex align="center">
+          <Box
+            w="40px"
+            h="40px"
+            bg={localStatus === "inactive" ? darkenHex(vehicle.color, 40) : vehicle.color}
+            borderRadius="md"
+            mr={3}
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            position="relative"
+            cursor="pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              fetchRoutes();
+            }}
+            title="Click to refresh routes"
+          >
+            <RepeatIcon boxSize="5" color="white" />
+          </Box>
+          <Box flex="1">
+            <Text fontWeight="bold">{vehicle.name}</Text>
+            {vehicle.last_position && (
+              <Text fontSize="xs">
+                {vehicle.last_position.city
+                  ? vehicle.last_position.city
+                  : formatCoordinates(
+                      vehicle.last_position.latitude,
+                      vehicle.last_position.longitude
+                    )}
+                <br />
+                {formatTimestamp(vehicle.last_position.location_time)}
+              </Text>
+            )}
+          </Box>
+          <IconButton
+            icon={
+              <ChevronDownIcon
+                transform={isOpen ? "rotate(180deg)" : "rotate(0deg)"}
+                transition="transform 0.3s ease"
+              />
+            }
+            variant="ghost"
+            aria-label="Toggle Options"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleDropdown();
+            }}
+          />
+        </Flex>
+      </Box>
       <Collapse in={isOpen} animateOpacity>
         <Flex mt={2} justify="space-between" gap={2}>
           <Button
@@ -356,13 +367,14 @@ const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
             flexDirection="column"
             alignItems="center"
             justifyContent="center"
-            onClick={handleShowOnMapClick}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleShowOnMapClick(e);
+            }}
           >
             <InfoIcon boxSize="5" mb="1" />
             <Text fontSize="xs" textAlign="center">
-              Show
-              <br />
-              on Map
+              Show<br />on Map
             </Text>
           </Button>
         </Flex>

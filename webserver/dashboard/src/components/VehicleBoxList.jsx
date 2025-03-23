@@ -4,7 +4,7 @@ import VehicleBox from "./VehicleBox";
 
 const VehicleBoxList = ({ vehicles, onDelete, onUpdate, onShowOnMap }) => {
   return (
-    <VStack spacing={4} align="stretch">
+    <VStack spacing={2} align="stretch">
       {vehicles.map((veh) => (
         <VehicleBox
           key={veh.id}

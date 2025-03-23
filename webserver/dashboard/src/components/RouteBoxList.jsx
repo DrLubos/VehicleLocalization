@@ -4,7 +4,7 @@ import RouteBox from './RouteBox';
 
 const RouteBoxList = ({ routes, onDeleteRoute, onShowRoute }) => {
   return (
-    <VStack spacing={4} align="stretch">
+    <VStack spacing={2} align="stretch">
       {routes.map((route) => (
         <RouteBox 
           key={route.id} 

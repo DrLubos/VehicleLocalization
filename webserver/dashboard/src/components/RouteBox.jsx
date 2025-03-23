@@ -1,98 +1,112 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Box, Flex, Text, Button, VStack, HStack } from '@chakra-ui/react';
 import { DeleteIcon, ViewIcon, ViewOffIcon } from '@chakra-ui/icons';
 
+const formatTime = (timeStr) => {
+  const date = new Date(timeStr);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${day}.${month} ${hours}:${minutes}`;
+};
+
+const formatCoordinates = (lat, lon) => {
+  const latStr = `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}`;
+  const lonStr = `${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
+  return `${latStr}, ${lonStr}`;
+};
+
 const RouteBox = ({ route, onDelete, onShowRoute }) => {
-  const startLabel = route.start_city ? route.start_city : route.start_coords;
-  const endLabel = route.end_city ? route.end_city : route.end_coords;
-
-  const formatTime = (timeStr) => {
-    const date = new Date(timeStr);
-    return date.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  };
-
-  const [routeVisible, setRouteVisible] = useState(false);
-  const toggleRouteVisibility = () => {
-    const newState = !routeVisible;
-    setRouteVisible(newState);
-    if (onShowRoute) {
-      onShowRoute(route.id, newState);
+  let startLocation = route.start_city;
+  if (!startLocation && route.start_coords) {
+    const parts = route.start_coords.split(" ");
+    if (parts.length === 2) {
+      const lat = parseFloat(parts[0]);
+      const lon = parseFloat(parts[1]);
+      startLocation = formatCoordinates(lat, lon);
     }
-  };
+  }
+
+  let endLocation = route.end_city;
+  if (!endLocation && route.end_coords) {
+    const parts = route.end_coords.split(" ");
+    if (parts.length === 2) {
+      const lat = parseFloat(parts[0]);
+      const lon = parseFloat(parts[1]);
+      endLocation = formatCoordinates(lat, lon);
+    }
+  }
+
+  const distanceKm = (route.total_distance / 1000).toFixed(2);
+
+  const isVisible = route.isVisible;
 
   return (
-    <Box borderWidth="1px" borderRadius="md" p={2} mb={0}>
-      <Flex align="center" justifyContent="space-between">
-        <Button
-          size="sm"
-          variant="outline"
-          flex={1}
-          height="60px"
-          p={0}
-          display="flex"
-          flexDirection="column"
-          alignItems="center"
-          justifyContent="center"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(route.id);
-          }}
-        >
-          <DeleteIcon boxSize="5" mb="1" />
-          <Text fontSize="xs">
-            Delete
-            <br />
-            route
+    <Box borderWidth="1px" borderRadius="md" p={2} textAlign="center">
+      <VStack spacing={1} align="stretch">
+        <Box>
+          <Text fontSize="sm" fontWeight="bold">
+            {startLocation || "N/A"}
           </Text>
-        </Button>
-        <VStack spacing={1} flex={1} mx={4} align="center">
-          <HStack spacing={2}>
-            <Text fontSize="sm" fontWeight="bold">
-              {startLabel}
-            </Text>
-            <Text fontSize="sm" color="gray.600">
-              {formatTime(route.start_time)}
-            </Text>
-          </HStack>
-          <Text fontSize="sm" color="gray.500">
-            {route.total_distance} km
+        </Box>
+        <Flex justifyContent="space-between" alignItems="center" gap={2}>
+          <Box flex="1" display="flex" justifyContent="center">
+            <Button
+              size="sm"
+              variant="outline"
+              flex={1}
+              height="60px"
+              p={0}
+              display="flex"
+              flexDirection="column"
+              alignItems="center"
+              justifyContent="center"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(route.id);
+              }}
+            >
+              <DeleteIcon boxSize="4" mb="1" />
+              <Text fontSize="xs" textAlign="center">Delete<br />route</Text>
+            </Button>
+          </Box>
+          <Box flex="1" textAlign="center">
+            <VStack spacing={1}>
+              <Text fontSize="sm">{formatTime(route.start_time)}</Text>
+              <Text fontSize="sm">{distanceKm} km</Text>
+              <Text fontSize="sm">{route.end_time ? formatTime(route.end_time) : "-"}</Text>
+            </VStack>
+          </Box>
+          <Box flex="1" display="flex" justifyContent="center">
+            <Button
+              size="sm"
+              variant="outline"
+              flex={1}
+              height="60px"
+              p={0}
+              display="flex"
+              flexDirection="column"
+              alignItems="center"
+              justifyContent="center"
+              onClick={(e) => {
+                e.stopPropagation();
+                onShowRoute(route.id, !isVisible);
+              }}
+            >
+              {isVisible ? <ViewOffIcon boxSize="4" mb="1" /> : <ViewIcon boxSize="4" mb="1" />}
+              <Text fontSize="xs" textAlign="center">
+                {isVisible ? "Hide" : "Show"}<br />route
+              </Text>
+            </Button>
+          </Box>
+        </Flex>
+        <Box>
+          <Text fontSize="sm" fontWeight="bold">
+            {endLocation || "N/A"}
           </Text>
-          <HStack spacing={2}>
-            <Text fontSize="sm" fontWeight="bold">
-              {endLabel}
-            </Text>
-            <Text fontSize="sm" color="gray.600">
-              {route.end_time ? formatTime(route.end_time) : "-"}
-            </Text>
-          </HStack>
-        </VStack>
-        <Button
-          size="sm"
-          variant="outline"
-          flex={1}
-          height="60px"
-          p={0}
-          display="flex"
-          flexDirection="column"
-          alignItems="center"
-          justifyContent="center"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleRouteVisibility();
-          }}
-        >
-          {routeVisible ? <ViewOffIcon boxSize="5" mb="1" /> : <ViewIcon boxSize="5" mb="1" />}
-          {routeVisible ? (
-            <Text fontSize="xs">Hide<br />route</Text>
-          ) : (
-            <Text fontSize="xs">Show<br />route</Text>
-          )}
-        </Button>
-      </Flex>
+        </Box>
+      </VStack>
     </Box>
   );
 };
