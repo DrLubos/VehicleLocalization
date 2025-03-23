@@ -73,13 +73,13 @@ class TokenResponse(BaseModel):
         token (str): The token string.
         position_check_freq (int): Frequency of position checks in seconds.
         min_distance_delta (int): Minimum distance delta in meters.
-        max_idle_minutes (int): Maximum idle time in minutes.
+        manual_start (bool): Manual start flag.
     """
     status: str = Field(default="success")
     token: str
     position_check_freq: int
     min_distance_delta: int
-    max_idle_minutes: int
+    manual_start: bool
 
 
 class TokenVerifyRequest(BaseModel):

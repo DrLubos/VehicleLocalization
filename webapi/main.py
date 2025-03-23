@@ -236,10 +236,11 @@ async def get_last_location_for_all_vehicles(current_user: User = Depends(get_cu
             select(Route)
             .filter(Route.assignment_id == assignment.id)
             .order_by(Route.start_time.desc())
-            .limit(1)
+            .limit(2)
         )
-        route = route_result.scalars().first()
-        if route:
+        routes = route_result.scalars().all()
+
+        for route in routes:
             position_result = await db.execute(
                 select(Position.id,
                        Position.route_id,
@@ -259,8 +260,9 @@ async def get_last_location_for_all_vehicles(current_user: User = Depends(get_cu
                     "location_time": position.timestamp,
                     "speed": position.speed,
                 }
-            if route.end_city:
-                last_position["city"] = route.end_city
+                if route.end_city:
+                    last_position["city"] = route.end_city
+                break
         response_dict = {
             "vehicle" : {
                 "id": vehicle.id,
@@ -435,6 +437,7 @@ async def update_vehicle(vehicle_id: int,
     if vehicle_data.manual_route_start_enabled is not None:
         vehicle.manual_route_start_enabled = vehicle_data.manual_route_start_enabled
 
+    vehicle.token = ""
     await db.commit()
     await db.refresh(vehicle)
     return vehicle

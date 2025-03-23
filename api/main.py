@@ -6,9 +6,8 @@ import math
 import secrets
 import logging
 
-from typing import Tuple
 from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import select, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2 import WKTElement
 
@@ -109,14 +108,14 @@ async def update_route_geom(session: AsyncSession, route_id: int, lon: float, la
     Returns:
         None
     """
-    sql = """
-    UPDATE routes
-    SET route_geom = CASE 
-        WHEN route_geom IS NULL THEN ST_MakeLine(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
-        ELSE ST_AddPoint(route_geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
-    END
-    WHERE id = :route_id;
-    """
+    sql = text("""
+        UPDATE routes
+        SET route_geom = CASE 
+            WHEN route_geom IS NULL THEN ST_MakeLine(ARRAY[ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)])
+            ELSE ST_AddPoint(route_geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
+        END
+        WHERE id = :route_id;
+    """)
     await session.execute(sql, {"lon": lon, "lat": lat, "route_id": route_id})
 
 
@@ -151,11 +150,11 @@ async def post_location(data: PositionRequest,
         raise HTTPException(status_code=400, detail="Invalid coordinates")
     lat = round(data.lat, 7)
     lon = round(data.lon, 7)
-    # Check if vehicle is assigned to only one user
+
     assignment = await get_active_assignment_by_vehicle(session, vehicle.id)
     if assignment is None:
         raise HTTPException(status_code=404, detail="Vehicle is not assigned")
-    # Check if exists route for this assignment
+
     route = await get_latest_route(session, assignment.id)
     create_new_route = False
 
@@ -171,7 +170,13 @@ async def post_location(data: PositionRequest,
                 route.end_city = city
                 create_new_route = True
         else:
-            create_new_route = False
+            diff = (now - route.start_time).total_seconds()
+            if diff > vehicle.max_idle_minutes * 60:
+                await session.delete(route)
+                await session.commit()
+                create_new_route = True
+            else:
+                create_new_route = False
 
     if create_new_route:
         start_city = await get_city_by_coords(lat, lon)
@@ -195,7 +200,7 @@ async def post_location(data: PositionRequest,
         additional_distance = calculate_distance(last_lat, last_lon, lat, lon)
         if not create_new_route:
             route.total_distance += int(additional_distance)
-            route.route_geom = update_route_geom(session, route_id, lon, lat)
+            route.route_geom = await update_route_geom(session, route_id, lon, lat)
 
     point = WKTElement(f"POINT({lon} {lat})", srid=4326)
     new_position = Position(
@@ -244,6 +249,27 @@ async def post_route(data: RouteCreationRequest,
     assignment = await get_active_assignment_by_vehicle(session, vehicle.id)
     if assignment is None:
         raise HTTPException(status_code=404, detail="No active assignment found for this vehicle")
+    if not vehicle.manual_route_start_enabled:
+        return {"success": True, "message": "Manual route start is disabled"}
+    route_result = await session.execute(
+        select(Route)
+        .filter(Route.assignment_id == assignment.id)
+        .order_by(Route.start_time.desc())
+    )
+    routes = route_result.scalars().all()
+    empty_route = None
+    for route in routes:
+        pos_result = await session.execute(
+            select(Position.id).filter(Position.route_id == route.id).limit(1)
+        )
+        pos = pos_result.first()
+        if not pos:
+            empty_route = route
+            break
+    if empty_route:
+        await session.delete(empty_route)
+        await session.commit()
+
     new_route = Route(
         assignment_id=assignment.id,
         start_time=now,
@@ -299,7 +325,7 @@ async def post_token(data: TokenRequest, session: AsyncSession = Depends(get_db)
         token=new_token,
         position_check_freq=vehicle.position_check_freq,
         min_distance_delta=vehicle.min_distance_delta,
-        max_idle_minutes=vehicle.max_idle_minutes
+        send_start_message=vehicle.manual_route_start_enabled
     )
 
 
