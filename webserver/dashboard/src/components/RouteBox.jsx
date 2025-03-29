@@ -1,23 +1,23 @@
-import React from 'react';
-import { Box, Flex, Text, Button, VStack, HStack } from '@chakra-ui/react';
-import { DeleteIcon, ViewIcon, ViewOffIcon } from '@chakra-ui/icons';
+import React from "react";
+import { Box, Flex, Text, Button, VStack, HStack } from "@chakra-ui/react";
+import { DeleteIcon, ViewIcon, ViewOffIcon } from "@chakra-ui/icons";
 
 const formatTime = (timeStr) => {
   const date = new Date(timeStr);
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${day}.${month} ${hours}:${minutes}`;
 };
 
 const formatCoordinates = (lat, lon) => {
-  const latStr = `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}`;
-  const lonStr = `${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
+  const latStr = `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? "N" : "S"}`;
+  const lonStr = `${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? "E" : "W"}`;
   return `${latStr}, ${lonStr}`;
 };
 
-const RouteBox = ({ route, onDelete, onShowRoute }) => {
+const RouteBox = ({ route, onDeleteRoute, onShowRoute }) => {
   let startLocation = route.start_city;
   if (!startLocation && route.start_coords) {
     const parts = route.start_coords.split(" ");
@@ -64,18 +64,23 @@ const RouteBox = ({ route, onDelete, onShowRoute }) => {
               justifyContent="center"
               onClick={(e) => {
                 e.stopPropagation();
-                onDelete(route.id);
-              }}
-            >
+                onDeleteRoute(route.id);
+              }}>
               <DeleteIcon boxSize="4" mb="1" />
-              <Text fontSize="xs" textAlign="center">Delete<br />route</Text>
+              <Text fontSize="xs" textAlign="center">
+                Delete
+                <br />
+                route
+              </Text>
             </Button>
           </Box>
           <Box flex="1" textAlign="center">
             <VStack spacing={1}>
               <Text fontSize="sm">{formatTime(route.start_time)}</Text>
               <Text fontSize="sm">{distanceKm} km</Text>
-              <Text fontSize="sm">{route.end_time ? formatTime(route.end_time) : "-"}</Text>
+              <Text fontSize="sm">
+                {route.end_time ? formatTime(route.end_time) : "-"}
+              </Text>
             </VStack>
           </Box>
           <Box flex="1" display="flex" justifyContent="center">
@@ -92,11 +97,16 @@ const RouteBox = ({ route, onDelete, onShowRoute }) => {
               onClick={(e) => {
                 e.stopPropagation();
                 onShowRoute(route.id, !isVisible);
-              }}
-            >
-              {isVisible ? <ViewOffIcon boxSize="4" mb="1" /> : <ViewIcon boxSize="4" mb="1" />}
+              }}>
+              {isVisible ? (
+                <ViewOffIcon boxSize="4" mb="1" />
+              ) : (
+                <ViewIcon boxSize="4" mb="1" />
+              )}
               <Text fontSize="xs" textAlign="center">
-                {isVisible ? "Hide" : "Show"}<br />route
+                {isVisible ? "Hide" : "Show"}
+                <br />
+                route
               </Text>
             </Button>
           </Box>

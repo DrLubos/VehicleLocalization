@@ -149,7 +149,7 @@ async def get_assignment_for_route_and_user(session: AsyncSession,
             )
         )
     )
-    return result.scalars_first()
+    return result.scalars().first()
 
 
 async def get_latest_route(session: AsyncSession, assignment_id: int) -> Route | None:

@@ -7,6 +7,41 @@ import Map from "../components/Map";
 const Dashboard = () => {
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [displayedRoutes, setDisplayedRoutes] = useState([]);
+
+  const toggleRouteVisibility = async (routeId, isVisible, vehicleColor) => {
+    const existingRoute = displayedRoutes.find((r) => r.routeId === routeId);
+    if (existingRoute) {
+      setDisplayedRoutes((prev) =>
+        prev.map((r) =>
+          r.routeId === routeId ? { ...r, hidden: !isVisible } : r
+        )
+      );
+      return;
+    }
+    if (!isVisible) return;
+
+    const token = localStorage.getItem("authToken");
+    try {
+      const response = await fetch(
+        `https://webapi.vehiclemap.xyz/routes/${routeId}/positions`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to fetch route positions`);
+      }
+      const positions = await response.json();
+      setDisplayedRoutes((prev) => [
+        ...prev,
+        { routeId, vehicleColor, positions, hidden: false },
+      ]);
+    } catch (error) {
+      console.error("Error fetching positions:", error);
+    }
+  };
+
   const bg = useColorModeValue("gray.50", "gray.900");
 
   const refreshVehicles = () => {
@@ -16,7 +51,8 @@ const Dashboard = () => {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((response) => {
-        if (!response.ok) throw new Error(`Error fetching vehicles: ${response.status}`);
+        if (!response.ok)
+          throw new Error(`Error fetching vehicles: ${response.status}`);
         return response.json();
       })
       .then((data) => {
@@ -57,9 +93,15 @@ const Dashboard = () => {
           onDelete={handleDelete}
           onUpdate={handleUpdate}
           onShowOnMap={handleShowOnMap}
+          displayedRoutes={displayedRoutes}
+          onToggleRoute={toggleRouteVisibility}
         />
         <Box flex="1" h="calc(100vh - 74px)">
-          <Map vehicles={vehicles} selectedVehicle={selectedVehicle} />
+          <Map
+            vehicles={vehicles}
+            selectedVehicle={selectedVehicle}
+            displayedRoutes={displayedRoutes}
+          />
         </Box>
       </Flex>
     </Box>

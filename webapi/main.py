@@ -642,7 +642,7 @@ async def get_vehicle_routes(vehicle_id: int,
     return respone
 
 
-@app.get("/routes/{route_id}/positions", status_code=200, response_model=PositionResponse)
+@app.get("/routes/{route_id}/positions", status_code=200, response_model=list[PositionResponse])
 async def get_route_positions(route_id: int,
                            current_user: User = Depends(get_current_user),
                            db: AsyncSession = Depends(get_db)) -> list[Position]:
@@ -666,8 +666,7 @@ async def get_route_positions(route_id: int,
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
 
-    result_assignment = await get_assignment_for_route_and_user(db, route, current_user.id)
-    assignment = result_assignment.scalars().first()
+    assignment = await get_assignment_for_route_and_user(db, route, current_user.id)
     if not assignment:
         raise HTTPException(status_code=403, detail="Not authorized to view this route")
 

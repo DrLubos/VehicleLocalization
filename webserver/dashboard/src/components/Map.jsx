@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { Box } from "@chakra-ui/react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap, CircleMarker, Polyline } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -49,7 +49,7 @@ const MapViewUpdater = ({ selectedVehicle }) => {
   return null;
 };
 
-const Map = ({ vehicles, selectedVehicle }) => {
+const Map = ({ vehicles, selectedVehicle, displayedRoutes }) => {
   const defaultCenter = [48.1486, 17.1077];
   const center =
     vehicles.find((veh) => veh.last_position)
@@ -84,6 +84,30 @@ const Map = ({ vehicles, selectedVehicle }) => {
               </Marker>
             )
         )}
+        {displayedRoutes.filter(r => !r.hidden).map((route) => {
+          const { routeId, vehicleColor, positions } = route;
+          const polylinePositions = positions.map(pos => [pos.latitude, pos.longitude]);
+          return (
+            <React.Fragment key={routeId}>
+              <Polyline key={`route-line-${routeId}`} positions={polylinePositions} pathOptions={{ color: vehicleColor }} />
+              {positions.map(pos => (
+                <CircleMarker
+                  key={`route-point-${pos.id}`}
+                  center={[pos.latitude, pos.longitude]}
+                  radius={6}
+                  pathOptions={{ color: vehicleColor }}
+                >
+                  <Popup>
+                    <strong>Lat:</strong> {pos.latitude.toFixed(5)}<br />
+                    <strong>Lon:</strong> {pos.longitude.toFixed(5)}<br />
+                    <strong>Speed:</strong> {pos.speed} km/h<br />
+                    <strong>Time:</strong> {formatTimestamp(pos.timestamp)}
+                  </Popup>
+                </CircleMarker>
+              ))}
+            </React.Fragment>
+          );
+        })}
         <MapViewUpdater selectedVehicle={selectedVehicle} />
       </MapContainer>
     </Box>

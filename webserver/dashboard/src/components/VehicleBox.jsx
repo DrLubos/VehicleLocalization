@@ -31,12 +31,16 @@ import RouteBoxList from "./RouteBoxList";
 function darkenHex(hex, percent = 20) {
   let num = parseInt(hex.replace("#", ""), 16);
   let r = (num >> 16) - Math.round((num >> 16) * (percent / 100));
-  let g = ((num >> 8) & 0x00ff) - Math.round(((num >> 8) & 0x00ff) * (percent / 100));
+  let g =
+    ((num >> 8) & 0x00ff) - Math.round(((num >> 8) & 0x00ff) * (percent / 100));
   let b = (num & 0x0000ff) - Math.round((num & 0x0000ff) * (percent / 100));
   r = r < 0 ? 0 : r;
   g = g < 0 ? 0 : g;
   b = b < 0 ? 0 : b;
-  return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+  return (
+    "#" +
+    ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()
+  );
 }
 
 const formatTimestamp = (timestamp) => {
@@ -57,7 +61,14 @@ const formatCoordinates = (lat, lon) => {
   return `${latAbs}° ${latCard}, ${lonAbs}° ${lonCard}`;
 };
 
-const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
+const VehicleBox = ({
+  vehicle,
+  onDelete,
+  onUpdate,
+  onShowOnMap,
+  onToggleRoute,
+  onDeleteRoute,
+}) => {
   const [localStatus, setLocalStatus] = useState(vehicle.status);
   const [isOpen, setIsOpen] = useState(false);
   const [routes, setRoutes] = useState(null);
@@ -94,7 +105,12 @@ const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
         throw new Error(`Error fetching routes: ${response.status}`);
       }
       const data = await response.json();
-      setRoutes(data);
+      setRoutes(
+        data.map((route) => ({
+          ...route,
+          isVisible: false,
+        }))
+      );
     } catch (error) {
       console.error(error);
       toast({
@@ -209,7 +225,9 @@ const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
       const data = await response.json();
       const newStatus =
         data.new_status ||
-        (data.message.toLowerCase().includes("inactive") ? "inactive" : "active");
+        (data.message.toLowerCase().includes("inactive")
+          ? "inactive"
+          : "active");
       setLocalStatus(newStatus);
       toast({
         title: "Status updated",
@@ -245,7 +263,11 @@ const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
           <Box
             w="40px"
             h="40px"
-            bg={localStatus === "inactive" ? darkenHex(vehicle.color, 40) : vehicle.color}
+            bg={
+              localStatus === "inactive"
+                ? darkenHex(vehicle.color, 40)
+                : vehicle.color
+            }
             borderRadius="md"
             mr={3}
             display="flex"
@@ -257,8 +279,7 @@ const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
               e.stopPropagation();
               fetchRoutes();
             }}
-            title="Click to refresh routes"
-          >
+            title="Click to refresh routes">
             <RepeatIcon boxSize="5" color="white" />
           </Box>
           <Box flex="1">
@@ -307,8 +328,7 @@ const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
             onClick={(e) => {
               e.stopPropagation();
               handleDelete(e);
-            }}
-          >
+            }}>
             <DeleteIcon boxSize="5" mb="1" />
             <Text fontSize="xs">Delete</Text>
           </Button>
@@ -325,8 +345,7 @@ const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
             onClick={(e) => {
               e.stopPropagation();
               onEditOpen();
-            }}
-          >
+            }}>
             <EditIcon boxSize="5" mb="1" />
             <Text fontSize="xs">Edit</Text>
           </Button>
@@ -343,17 +362,20 @@ const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
             onClick={(e) => {
               e.stopPropagation();
               handleToggleStatus(e);
-            }}
-          >
+            }}>
             {localStatus === "active" || localStatus === "registered" ? (
               <>
                 <CloseIcon boxSize="5" mb="1" />
-                <Text fontSize="xs" textAlign="center">Deactivate</Text>
+                <Text fontSize="xs" textAlign="center">
+                  Deactivate
+                </Text>
               </>
             ) : (
               <>
                 <CheckIcon boxSize="5" mb="1" />
-                <Text fontSize="xs" textAlign="center">Activate</Text>
+                <Text fontSize="xs" textAlign="center">
+                  Activate
+                </Text>
               </>
             )}
           </Button>
@@ -370,17 +392,35 @@ const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
             onClick={(e) => {
               e.stopPropagation();
               handleShowOnMapClick(e);
-            }}
-          >
+            }}>
             <InfoIcon boxSize="5" mb="1" />
             <Text fontSize="xs" textAlign="center">
-              Show<br />on Map
+              Show
+              <br />
+              on Map
             </Text>
           </Button>
         </Flex>
         {routes && (
           <Box mt={2}>
-            <RouteBoxList routes={routes} onDeleteRoute={() => {}} onShowRoute={() => {}} />
+            <RouteBoxList
+              routes={routes}
+              onDeleteRoute={(routeId) => {
+                if (onDeleteRoute) {
+                  onDeleteRoute(routeId);
+                }
+              }}
+              onShowRoute={(routeId, isVisible) => {
+                setRoutes((prevRoutes) =>
+                  prevRoutes.map((r) =>
+                    r.id === routeId ? { ...r, isVisible } : r
+                  )
+                );
+                if (onToggleRoute) {
+                  onToggleRoute(routeId, isVisible, vehicle.color);
+                }
+              }}
+            />
           </Box>
         )}
       </Collapse>
@@ -407,7 +447,9 @@ const VehicleBox = ({ vehicle, onDelete, onUpdate, onShowOnMap }) => {
           <ModalHeader>Delete Vehicle</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
-            <Text>Are you sure you want to delete vehicle "{vehicle.name}"?</Text>
+            <Text>
+              Are you sure you want to delete vehicle "{vehicle.name}"?
+            </Text>
           </ModalBody>
           <ModalFooter>
             <Button colorScheme="red" mr={3} onClick={handleDeleteConfirm}>

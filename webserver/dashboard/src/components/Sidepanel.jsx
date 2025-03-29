@@ -3,7 +3,16 @@ import { Box, Button, useDisclosure, useToast } from "@chakra-ui/react";
 import VehicleBoxList from "./VehicleBoxList";
 import VehicleFormModal from "./VehicleFormModal";
 
-const Sidepanel = ({ vehicles, refreshVehicles, onDelete, onUpdate, onShowOnMap }) => {
+const Sidepanel = ({
+  vehicles,
+  refreshVehicles,
+  onDelete,
+  onUpdate,
+  onShowOnMap,
+  displayedRoutes,
+  onToggleRoute,
+  onDeleteRoute,
+}) => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
 
@@ -53,8 +62,7 @@ const Sidepanel = ({ vehicles, refreshVehicles, onDelete, onUpdate, onShowOnMap 
         borderRight: "1px solid",
         borderRightColor: "gray.700",
         borderImage: "linear-gradient(to bottom, gray.700, transparent) 1",
-      }}
-    >
+      }}>
       <Button colorScheme="blue" mb={4} w="full" onClick={onOpen}>
         + Add Vehicle
       </Button>
@@ -63,6 +71,9 @@ const Sidepanel = ({ vehicles, refreshVehicles, onDelete, onUpdate, onShowOnMap 
         onDelete={onDelete}
         onUpdate={onUpdate}
         onShowOnMap={onShowOnMap}
+        displayedRoutes={displayedRoutes}
+        onToggleRoute={onToggleRoute}
+        onDeleteRoute={onDeleteRoute}
       />
       <VehicleFormModal
         isOpen={isOpen}
