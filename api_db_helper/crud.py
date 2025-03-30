@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, func
 
 from api_db_helper.models import Vehicle, UserVehicleAssignment, Route, Position
+from api_db_helper.utils import get_city_by_coords
 
 
 async def get_vehicle_by_token(session: AsyncSession, token: str) -> Vehicle | None:
@@ -198,3 +199,37 @@ async def get_latest_position(session: AsyncSession, route_id: int) -> Position 
         .limit(1)
     )
     return result.first()
+
+
+async def update_route_end_city(session: AsyncSession, route_id: int,
+                                lat: float, lon: float, end_time: datetime = None) -> str | None:
+    """
+    Uses OpenWeatherMap reverse geocoding API to update the end_city field of a given route.
+
+    Args:
+        session (AsyncSession): SQLAlchemy DB session.
+        route_id (int): ID of the route to update.
+        lat (float): Latitude of the latest known position.
+        lon (float): Longitude of the latest known position.
+
+    Returns:
+        str | None: The city name if successfully retrieved and updated, otherwise None.
+    """
+    city = await get_city_by_coords(lat, lon)
+    if not city:
+        return None
+
+    result = await session.execute(select(Route).filter(Route.id == route_id))
+    route = result.scalars().first()
+    if route:
+        route.end_city = city
+        if not route.end_time:
+            if end_time:
+                route.end_time = end_time
+            else:
+                last_posiiton = await get_latest_position(session, route_id)
+                if last_posiiton:
+                    route.end_time = last_posiiton.timestamp
+        await session.commit()
+        return city
+    return None

@@ -1,6 +1,7 @@
 .DS_Store
 Thumbs.db
 .vscode
+api_db_helper/.env
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

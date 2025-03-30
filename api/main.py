@@ -19,6 +19,7 @@ from api_db_helper.models import Vehicle, Route, Position, VehicleStatus,\
     extract_lat_lon_from_wkt
 from api_db_helper.crud import get_vehicle_by_token, get_active_assignment_by_vehicle,\
     get_latest_route, get_latest_position
+from api_db_helper.utils import get_city_by_coords
 
 logging.basicConfig(
     level=logging.INFO,
@@ -72,23 +73,6 @@ def knots_to_kmh(speed_knots: float) -> float:
         float: Speed in kilometers per hour, rounded to two decimal places.
     """
     return round(speed_knots * 1.852, 2)
-
-
-async def get_city_by_coords(lat: float, lon: float) -> str:
-    """
-    Asynchronously retrieves the city name based on the provided latitude and longitude coordinates.
-
-    Args:
-        lat (float): The latitude of the location.
-        lon (float): The longitude of the location.
-
-    Returns:
-        str: The name of the city corresponding to the given coordinates.
-    """
-    round(lat, 8)
-    round(lon, 8)
-    #TODO: Implement city name retrieval based on coordinates
-    return ""
 
 
 async def update_route_geom(session: AsyncSession, route_id: int, lon: float, lat: float) -> None:

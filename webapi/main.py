@@ -20,7 +20,7 @@ from api_db_helper.models import User, Vehicle, UserVehicleAssignment, Route, Po
     VehicleStatus, extract_lat_lon_from_wkt
 from api_db_helper.db_connection import get_db
 from api_db_helper.crud import get_active_assignments_by_user, get_assignment_for_route_and_user,\
-    get_active_assignment_by_user_and_vehicle, get_latest_position
+    get_active_assignment_by_user_and_vehicle, get_latest_position, update_route_end_city
 
 
 logging.basicConfig(
@@ -250,8 +250,18 @@ async def get_last_location_for_all_vehicles(current_user: User = Depends(get_cu
                     "location_time": position.timestamp,
                     "speed": position.speed,
                 }
-                if route.end_city:
-                    last_position["city"] = route.end_city
+                if (
+                    route.end_city is None and
+                    last_position["location_time"] <
+                    datetime.datetime.utcnow() -
+                    datetime.timedelta(minutes=vehicle.max_idle_minutes)
+                    ):
+                    last_position["city"] = await update_route_end_city(db, route.id,
+                                                                        last_position["latitude"],
+                                                                        last_position["longitude"],
+                                                                        position.timestamp)
+                elif route.end_city:
+                    last_position["city"] = None
                 break
 
         response_dict = {
@@ -620,7 +630,6 @@ async def get_vehicle_routes(vehicle_id: int,
             "total_distance": route.total_distance,
             "start_city": route.start_city,
             "start_coords": "No location data",
-            "end_city": route.end_city,
             "end_coords": "No location data",
             "route_geometry": route_geojson,
         }
@@ -638,6 +647,10 @@ async def get_vehicle_routes(vehicle_id: int,
             last_lat, last_lon = extract_lat_lon_from_wkt(positions[-1].location)
             route_dict["start_coords"] = f"{first_lat} {first_lon}"
             route_dict["end_coords"] = f"{last_lat} {last_lon}"
+            route_dict["end_city"] = route.end_city if route.end_city else await\
+                update_route_end_city(db, route.id, last_lat, last_lon)
+        else:
+            route_dict["end_city"] = route.end_city
         respone.append(route_dict)
     return respone
 
