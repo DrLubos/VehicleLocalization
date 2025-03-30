@@ -95,6 +95,13 @@ const Dashboard = () => {
     setVehicles((prev) =>
       prev.map((v) => (v.id === updatedVehicle.id ? updatedVehicle : v))
     );
+    setDisplayedRoutes((prevRoutes) =>
+      prevRoutes.map((r) =>
+        r.vehicleId === updatedVehicle.id
+          ? { ...r, vehicleColor: updatedVehicle.color }
+          : r
+      )
+    );
   };
 
   const handleShowOnMap = (vehicle) => {
