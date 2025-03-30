@@ -423,6 +423,10 @@ const VehicleBox = ({
                 if (onDeleteRoute) {
                   onDeleteRoute(routeId);
                 }
+                setRoutes((prevRoutes) =>
+                  prevRoutes.filter((r) => r.id !== routeId)
+                );
+                fetchRoutes();
               }}
               onShowRoute={(routeId, isVisible) => {
                 setRoutes((prevRoutes) =>

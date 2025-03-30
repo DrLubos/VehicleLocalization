@@ -429,7 +429,7 @@ async def update_vehicle(vehicle_id: int,
     if vehicle_data.manual_route_start_enabled is not None:
         vehicle.manual_route_start_enabled = vehicle_data.manual_route_start_enabled
 
-    vehicle.token = ""
+    vehicle.token = None
     await db.commit()
     await db.refresh(vehicle)
     return vehicle
@@ -717,8 +717,7 @@ async def delete_route(route_id: int,
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
 
-    result_assignment = await get_assignment_for_route_and_user(db, route, current_user.id)
-    assignment = result_assignment.scalars().first()
+    assignment = await get_assignment_for_route_and_user(db, route, current_user.id)
     if not assignment:
         raise HTTPException(status_code=403, detail="Not authorized to delete this route")
 

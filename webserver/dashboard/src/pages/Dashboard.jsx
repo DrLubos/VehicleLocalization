@@ -85,10 +85,15 @@ const Dashboard = () => {
 
   useEffect(() => {
     refreshVehicles();
+    window.refreshVehicles = refreshVehicles;
+    return () => {
+      delete window.refreshVehicles;
+    };
   }, []);
 
   const handleDelete = (id) => {
     setVehicles((prev) => prev.filter((v) => v.id !== id));
+    setDisplayedRoutes((prev) => prev.filter((r) => r.vehicleId !== id));
   };
 
   const handleUpdate = (updatedVehicle) => {
