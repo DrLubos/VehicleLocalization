@@ -68,6 +68,8 @@ const VehicleBox = ({
   onShowOnMap,
   onToggleRoute,
   onDeleteRoute,
+  onClearRoute,
+  displayedRoutes,
 }) => {
   const [localStatus, setLocalStatus] = useState(vehicle.status);
   const [isOpen, setIsOpen] = useState(false);
@@ -106,13 +108,15 @@ const VehicleBox = ({
       }
       const data = await response.json();
       setRoutes(
-        data.map((route) => ({
-          ...route,
-          isVisible: false,
-        }))
+        data.map((route) => {
+          const isVisible = displayedRoutes?.some(
+            (r) => r.routeId === route.id && !r.hidden
+          );
+          return { ...route, isVisible };
+        })
       );
     } catch (error) {
-      console.error(error);
+      console.error("Error fetching routes", error);
       toast({
         title: "Error",
         description: "Could not load routes.",
@@ -151,7 +155,7 @@ const VehicleBox = ({
       });
       if (onDelete) onDelete(vehicle.id);
     } catch (error) {
-      console.error(error);
+      console.error("Error while deleting vehicle: ", error);
       toast({
         title: "Error",
         description: "Could not delete vehicle.",
@@ -195,7 +199,7 @@ const VehicleBox = ({
       onEditClose();
       if (onUpdate) onUpdate({ ...vehicle, ...updatedVehicle });
     } catch (error) {
-      console.error(error);
+      console.error("Error while updating vehicle: ", error);
       toast({
         title: "Error",
         description: "Could not update vehicle.",
@@ -238,7 +242,7 @@ const VehicleBox = ({
       });
       if (onUpdate) onUpdate({ ...vehicle, status: newStatus });
     } catch (error) {
-      console.error(error);
+      console.error("Error while changing status: ", error);
       toast({
         title: "Error",
         description: "Could not update status.",
@@ -277,6 +281,15 @@ const VehicleBox = ({
             cursor="pointer"
             onClick={(e) => {
               e.stopPropagation();
+              if (routes && routes.length > 0) {
+                const latestRoute = routes.reduce((latest, current) =>
+                  current.id > latest.id ? current : latest
+                );
+                const hasUnfinishedRoute = latestRoute && !latestRoute.end_time;
+                if (hasUnfinishedRoute) {
+                  onClearRoute(latestRoute.id);
+                }
+              }
               fetchRoutes();
             }}
             title="Click to refresh routes">
@@ -417,7 +430,7 @@ const VehicleBox = ({
                   )
                 );
                 if (onToggleRoute) {
-                  onToggleRoute(routeId, isVisible, vehicle.color);
+                  onToggleRoute(routeId, isVisible, vehicle);
                 }
               }}
             />

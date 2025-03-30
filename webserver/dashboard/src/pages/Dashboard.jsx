@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Box, Flex, useColorModeValue } from "@chakra-ui/react";
+import { Box, Flex, useColorModeValue, useToast } from "@chakra-ui/react";
 import Navbar from "../components/Navbar";
 import Sidepanel from "../components/Sidepanel";
 import Map from "../components/Map";
@@ -8,8 +8,9 @@ const Dashboard = () => {
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [displayedRoutes, setDisplayedRoutes] = useState([]);
+  const toast = useToast();
 
-  const toggleRouteVisibility = async (routeId, isVisible, vehicleColor) => {
+  const toggleRouteVisibility = async (routeId, isVisible, vehicle) => {
     const existingRoute = displayedRoutes.find((r) => r.routeId === routeId);
     if (existingRoute) {
       setDisplayedRoutes((prev) =>
@@ -35,11 +36,28 @@ const Dashboard = () => {
       const positions = await response.json();
       setDisplayedRoutes((prev) => [
         ...prev,
-        { routeId, vehicleColor, positions, hidden: false },
+        {
+          routeId,
+          vehicleColor: vehicle.color,
+          vehicleId: vehicle.id,
+          positions,
+          hidden: false,
+        },
       ]);
     } catch (error) {
       console.error("Error fetching positions:", error);
+      toast({
+        title: "Error",
+        description: "Could not load positions for route: " + routeId + ".",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
     }
+  };
+
+  const clearRoute = (routeId) => {
+    setDisplayedRoutes((prev) => prev.filter((r) => r.routeId !== routeId));
   };
 
   const bg = useColorModeValue("gray.50", "gray.900");
@@ -95,6 +113,7 @@ const Dashboard = () => {
           onShowOnMap={handleShowOnMap}
           displayedRoutes={displayedRoutes}
           onToggleRoute={toggleRouteVisibility}
+          onClearRoute={clearRoute}
         />
         <Box flex="1" h="calc(100vh - 74px)">
           <Map

@@ -9,6 +9,8 @@ const VehicleBoxList = ({
   onShowOnMap,
   onToggleRoute,
   onDeleteRoute,
+  onClearRoute,
+  displayedRoutes,
 }) => {
   return (
     <VStack spacing={2} align="stretch">
@@ -21,6 +23,8 @@ const VehicleBoxList = ({
           onShowOnMap={onShowOnMap}
           onToggleRoute={onToggleRoute}
           onDeleteRoute={onDeleteRoute}
+          onClearRoute={(routeId) => onClearRoute(routeId)}
+          displayedRoutes={displayedRoutes}
         />
       ))}
     </VStack>

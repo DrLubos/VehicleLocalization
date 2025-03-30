@@ -12,6 +12,7 @@ const Sidepanel = ({
   displayedRoutes,
   onToggleRoute,
   onDeleteRoute,
+  onClearRoute,
 }) => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
@@ -74,6 +75,7 @@ const Sidepanel = ({
         displayedRoutes={displayedRoutes}
         onToggleRoute={onToggleRoute}
         onDeleteRoute={onDeleteRoute}
+        onClearRoute={(routeId) => onClearRoute(routeId)}
       />
       <VehicleFormModal
         isOpen={isOpen}
