@@ -125,7 +125,7 @@ void loop() {
     if (!locationAcquired) {
       DEBUG_PRINT_LN(F("--LOOP-FAIL--\nCant get location, retrying..."));
       simcomComm.println(F("AT+CGNSSPWR=1"));
-      delay(500);
+      delay(1000);
       continue;
     }
     if (!locationDeviation) {
@@ -429,8 +429,9 @@ bool requestNewToken() {
         DEBUG_PRINT(F("New token: "));
         DEBUG_PRINT_LN(token);
         if (token.length() > 0) {
-          int value = parseJSON(httpString, "position_check_freq").toInt();
-          if (value > 0) {
+          int value = parseJSON(httpString, "position_check_freq").toInt() - 3;
+          if (value > -3) {
+            value = (value < 0) ? 0 : value;
             positionInterval = (value > 255) ? 255 : value;
           }
           value = parseJSON(httpString, "min_distance_delta").toInt();
@@ -922,10 +923,10 @@ void waitForModemToInitialize() {
  * @brief Waits for a command confirmation from the SIMCOM module.
  * 
  * This function checks the serial buffer for a response from the SIMCOM module
- * and waits for a specified maximum time. It looks for "OK" or "ERROR" in the response.
+ * and waits for a specified maximum time. It looks for "OK", "CGNSS" or "ERROR" in the response.
  * 
  * @param maxWaitTime The maximum time to wait for a response in milliseconds.
- * @return true if "OK" is received, false if "ERROR" is received or timeout occurs.
+ * @return true if "OK" or "CGNSS" is received, false if "ERROR" is received or timeout occurs.
  */
 bool waitForCommandConfirmation(int maxWaitTime) {
   DEBUG_PRINT(F("\nWaiting for OK..."));
@@ -937,6 +938,11 @@ bool waitForCommandConfirmation(int maxWaitTime) {
       while (simcomComm.available()) {
         response += char(simcomComm.read());
         if (response.indexOf("OK") != -1) {
+          DETAILED_DEBUG_PRINT(F("Response: "));
+          DETAILED_DEBUG_PRINT_LN(response);
+          return true;
+        }
+        if (response.indexOf("CGNSS") != -1) {
           DETAILED_DEBUG_PRINT(F("Response: "));
           DETAILED_DEBUG_PRINT_LN(response);
           return true;
