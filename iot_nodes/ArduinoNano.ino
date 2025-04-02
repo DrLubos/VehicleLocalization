@@ -447,6 +447,8 @@ bool requestNewToken() {
           DEBUG_PRINT_LN(String(minimalDistanceDelta));
           DEBUG_PRINT(F("Position Interval: "));
           DEBUG_PRINT_LN(String(positionInterval));
+          DEBUG_PRINT(F("Manual startup: "));
+          DEBUG_PRINT_LN(startupResponse);
           saveToEEPROM(token, tokenAddress, tokenMaxLength);
           DEBUG_PRINT_LN(F("----OK-----\nToken saved to EEPROM.\n----OK-----\n"));
           return true;
@@ -893,7 +895,7 @@ void waitForModemToInitialize() {
   clearBuffer();
   DEBUG_PRINT_LN(F("\nWaiting for modem to initialize..."));
   unsigned long startTime = millis();
-  const unsigned long timeout = 5000; // increase
+  const unsigned long timeout = 30000;
   while (millis() - startTime < timeout) {
     simcomComm.println("AT");
     delay(100);
