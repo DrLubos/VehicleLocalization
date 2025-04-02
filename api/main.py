@@ -118,7 +118,7 @@ async def post_location(data: PositionRequest,
         HTTPException: If the vehicle is not found (401).
         HTTPException: If posting location is not allowed for the vehicle (403).
         HTTPException: If the provided coordinates are invalid (400).
-        HTTPException: If the vehicle is not assigned to any user (401).
+        HTTPException: If the vehicle is not assigned to any user (403).
         HTTPException: If there is a database error (500).
 
     Returns:
@@ -137,7 +137,7 @@ async def post_location(data: PositionRequest,
 
     assignment = await get_active_assignment_by_vehicle(session, vehicle.id)
     if assignment is None:
-        raise HTTPException(status_code=401, detail="Vehicle is not assigned")
+        raise HTTPException(status_code=403, detail="Vehicle is not assigned")
 
     route = await get_latest_route(session, assignment.id)
     create_new_route = False
