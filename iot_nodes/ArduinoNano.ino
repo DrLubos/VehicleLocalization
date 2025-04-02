@@ -104,7 +104,6 @@ void setup() {
   }
   if (startupSendEnabled) {
     while (!sendStartupMessage()) {
-      Serial.println(F("Startup message was NOT sent"));
       if (!isConnected()) {
         checkSignalAndReconnect();
       }
@@ -432,30 +431,36 @@ String parseJSON(String jsonString, String key) {
 
 // Sending data to server -----------------------
 bool sendStartupMessage() {
-  Serial.println(F("\nSending startup message to server..."));
+  DEBUG_PRINT_LN(F("\nSending startup message to server..."));
   simcomSerial.println(F("AT+HTTPINIT"));
+  waitForReturnedOk(12000);
   simcomSerial.println(F("AT+HTTPPARA=\"URL\",\"http://api.vehiclemap.xyz/route\""));
+  waitForReturnedOk(12000);
   simcomSerial.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
+  waitForReturnedOk(12000);
   String httpString = "{\"token\":\"" + token + "\"}";
   simcomSerial.print(F("AT+HTTPDATA="));
   simcomSerial.print(httpString.length());
   simcomSerial.println(F(",10000"));
-  delay(100);
+  delay(50);
   simcomSerial.println(httpString);
-  delay(500);
+  delay(50);
   clearBuffer();
   simcomSerial.println(F("AT+HTTPACTION=1"));
-  wait(5);
+  waitForReturnedOk(12000);
   httpString = "";
+  delay(500);
   while (simcomSerial.available()) {
     httpString += (char)simcomSerial.read();
   }
+  DEBUG_PRINT("Response from server in startup message: ");
+  DEBUG_PRINT_LN(httpString);
   simcomSerial.println(F("AT+HTTPTERM"));
   if (httpString.indexOf("+HTTPACTION: 1,200,") > -1) {
-    Serial.println(F("-----OK-----\nStartup message sent successfully.\n-----OK-----\n"));
+    DEBUG_PRINT_LN(F("-----OK-----\nStartup message sent successfully.\n-----OK-----\n"));
     return true;
   }
-  Serial.println(F("-----ERROR-----\nStartup message was NOT sent.\n-----ERROR-----\n"));
+  DEBUG_PRINT_LN(F("-----ERROR-----\nStartup message was NOT sent.\n-----ERROR-----\n"));
   return false;
 }
 
