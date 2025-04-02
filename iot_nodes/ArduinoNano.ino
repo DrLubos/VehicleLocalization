@@ -178,11 +178,11 @@ String extractIMEI(String response) {
   return response;
 }
 
-bool waitForReturnedOk(int timeout) {
+bool waitForCommandConfirmation(int maxWaitTime) {
   DEBUG_PRINT(F("\nWaiting for OK..."));
   unsigned long startTime = millis();
   int attempts = 0;
-  while (millis() - startTime < timeout) {
+  while (millis() - startTime < maxWaitTime) {
     if (simcomSerial.available()) {
       String response = "";
       while (simcomSerial.available()) {
@@ -201,11 +201,10 @@ bool waitForReturnedOk(int timeout) {
       DETAILED_DEBUG_PRINT(F("Response: "));
       DETAILED_DEBUG_PRINT_LN(response);
     }
-    delay(10);
+    delay(5);
     ++attempts;
   }
-  DEBUG_PRINT(F("Timeout in waiting for returning OK after: "));
-  DEBUG_PRINT_LN(timeout);
+  DEBUG_PRINT_LN(F("Reached maximum wait time!"));
   return false;
 }
 
@@ -214,13 +213,13 @@ void connectToNetwork() {
   clearBuffer();
   DETAILED_DEBUG_PRINT_LN(F("Setting network mode..."));
   simcomSerial.println(F("AT+CGATT=1"));
-  waitForReturnedOk(9000);
+  waitForCommandConfirmation(9000);
   DETAILED_DEBUG_PRINT_LN(F("Setting APN..."));
   simcomSerial.println(F("AT+CGDCONT=1,\"IP\",\"internet\""));
-  waitForReturnedOk(9000);
+  waitForCommandConfirmation(9000);
   DETAILED_DEBUG_PRINT_LN(F("Setting PDP context..."));
   simcomSerial.println(F("AT+CGACT=1,1"));
-  waitForReturnedOk(9000);
+  waitForCommandConfirmation(9000);
 }
 
 bool checkSignalAndReconnect() {
@@ -277,11 +276,11 @@ bool requestNewToken() {
   DEBUG_PRINT_LN(F("\nRequesting new token..."));
   clearBuffer();
   simcomSerial.println(F("AT+HTTPINIT"));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   simcomSerial.println(F("AT+HTTPPARA=\"URL\",\"http://api.vehiclemap.xyz/request_token\""));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   simcomSerial.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   String httpString = "{\"imei\":\"" + imei + "\"}";
   simcomSerial.print(F("AT+HTTPDATA="));
   simcomSerial.print(httpString.length());
@@ -293,7 +292,7 @@ bool requestNewToken() {
   DETAILED_DEBUG_PRINT(F("Sending request to server: "));
   DETAILED_DEBUG_PRINT_LN(httpString);
   simcomSerial.println(F("AT+HTTPACTION=1"));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   httpString = "";
   delay(1000);
   while (simcomSerial.available()) {
@@ -361,11 +360,11 @@ bool verifyToken() {
   DEBUG_PRINT_LN(F("\nVerifying token..."));
   clearBuffer();
   simcomSerial.println(F("AT+HTTPINIT"));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   simcomSerial.println(F("AT+HTTPPARA=\"URL\",\"http://api.vehiclemap.xyz/verify_token\""));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   simcomSerial.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   String httpString = "{\"token\":\"" + token + "\", \"imei\":\"" + imei + "\"}";
   simcomSerial.print(F("AT+HTTPDATA="));
   simcomSerial.print(httpString.length());
@@ -377,7 +376,7 @@ bool verifyToken() {
   DETAILED_DEBUG_PRINT(F("Sending request to server: "));
   DETAILED_DEBUG_PRINT_LN(httpString);
   simcomSerial.println(F("AT+HTTPACTION=1"));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   httpString = "";
   delay(500);
   while (simcomSerial.available()) {
@@ -386,7 +385,7 @@ bool verifyToken() {
   DEBUG_PRINT("Response from server in verify token: ");
   DEBUG_PRINT_LN(httpString);
   simcomSerial.println(F("AT+HTTPTERM"));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   if (httpString.indexOf("+HTTPACTION: ") != -1) {
     if (httpString.indexOf("+HTTPACTION: 1,200,") > -1) {
       DEBUG_PRINT_LN(F("-----OK-----\nToken verified and saved to EEPROM.\n-----OK-----\n"));
@@ -433,11 +432,11 @@ String parseJSON(String jsonString, String key) {
 bool sendStartupMessage() {
   DEBUG_PRINT_LN(F("\nSending startup message to server..."));
   simcomSerial.println(F("AT+HTTPINIT"));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   simcomSerial.println(F("AT+HTTPPARA=\"URL\",\"http://api.vehiclemap.xyz/route\""));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   simcomSerial.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   String httpString = "{\"token\":\"" + token + "\"}";
   simcomSerial.print(F("AT+HTTPDATA="));
   simcomSerial.print(httpString.length());
@@ -447,7 +446,7 @@ bool sendStartupMessage() {
   delay(50);
   clearBuffer();
   simcomSerial.println(F("AT+HTTPACTION=1"));
-  waitForReturnedOk(12000);
+  waitForCommandConfirmation(12000);
   httpString = "";
   delay(500);
   while (simcomSerial.available()) {
@@ -471,7 +470,8 @@ void getLocation() {
   DEBUG_PRINT_LN(F("\nGetting location..."));
   clearBuffer();
   simcomSerial.println(F("AT+CGNSSINFO"));
-  waitForReturnedOk(9000);
+  waitForCommandConfirmation(9000);
+  delay(100);
   String gpsResponse = "";
   while (simcomSerial.available()) {
     gpsResponse += (char)simcomSerial.read();
@@ -482,8 +482,6 @@ void getLocation() {
   if (startIndex != -1) {
     String lat = "";
     String lon = "";
-    // String date = "";
-    // String time = "";
     String speed = "";
     gpsResponse = gpsResponse.substring(startIndex + 12);
     int startIdx = 0;
@@ -509,12 +507,6 @@ void getLocation() {
             lon = "-" + lon;
           }
           break;
-        // case 9:
-        //   date = (field.length() == 0) ? "" : field;
-        //   break;
-        // case 10:
-        //   time = (field.length() == 0) ? "" : field.substring(0, 6);
-        //   break;
         case 12:
           speed = (field.length() == 0) ? "" : field;
           break;
@@ -547,14 +539,19 @@ void getLocation() {
 
 bool sendLocation() {
   digitalWrite(ledPin, HIGH);
+  DEBUG_PRINT_LN(F("\nSending location to server..."));
+  clearBuffer();
   simcomSerial.println(F("AT+HTTPINIT"));
+  waitForCommandConfirmation(12000);
   simcomSerial.println(F("AT+HTTPPARA=\"URL\",\"http://api.vehiclemap.xyz/location\""));
+  waitForCommandConfirmation(12000);
   simcomSerial.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
+  waitForCommandConfirmation(12000);
   String communicationString;
-  communicationString = "{\"token\":\"" + token + "\",\"lat\":\"" +
-                        readFromEEPROM(latAddress, 12) + "\",\"lon\":\"" + readFromEEPROM(lonAddress, 12) + "\",\"speed\":\"" + readFromEEPROM(speedAddress, 6) + "\"}";
-  Serial.print(F("Sending data: "));
-  Serial.println(communicationString);
+  communicationString = "{\"token\":\"" + token +
+                        "\",\"lat\":\"" + readFromEEPROM(latAddress, 12) +
+                        "\",\"lon\":\"" + readFromEEPROM(lonAddress, 12) +
+                        "\",\"speed\":\"" + readFromEEPROM(speedAddress, 6) + "\"}";
   simcomSerial.print(F("AT+HTTPDATA="));
   simcomSerial.print(communicationString.length());
   simcomSerial.println(F(",10000"));
@@ -562,15 +559,20 @@ bool sendLocation() {
   simcomSerial.println(communicationString);
   delay(50);
   clearBuffer();
+  DETAILED_DEBUG_PRINT_LN(communicationString);
+  DETAILED_DEBUG_PRINT(F("Sending data: "));
   simcomSerial.println(F("AT+HTTPACTION=1"));
-  wait(5);
+  waitForCommandConfirmation(12000);
   communicationString.remove(0, communicationString.length());
   communicationString = "";
+  delay(500);
   while (simcomSerial.available()) {
     communicationString += (char)simcomSerial.read();
   }
   simcomSerial.println(F("AT+HTTPTERM"));
   digitalWrite(ledPin, LOW);
+  DETAILED_DEBUG_PRINT(F("Response from server in send location: "));
+  DETAILED_DEBUG_PRINT_LN(communicationString);
   if (communicationString.indexOf("+HTTPACTION: 1,200,") > -1) {
     Serial.println(F("-----OK-----\nLocation sent successfully.\n-----OK-----\n"));
     return true;
@@ -628,7 +630,7 @@ float calculateDistance(float lat1, float lon1, float lat2, float lon2) {
                                                 cos(radians(lat2)) *
                                                 sin(dLon / 2) * sin(dLon / 2);
   float c = 2 * atan2(sqrt(a), sqrt(1 - a));
-  DEBUG_PRINT(F("Distance: "));
+  DEBUG_PRINT(F("Distance between coords: "));
   DEBUG_PRINT_LN(R * c);
   return R * c;
 }
