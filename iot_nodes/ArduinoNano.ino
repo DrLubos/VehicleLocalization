@@ -23,7 +23,7 @@
   #define DETAILED_DEBUG_PRINT_LN(x) Serial.println(x)
 #endif
 
-AltSoftSerial simcomComm;     // RX (hnedy) na D8, TX (fialovy) na D9  // Simcom: Hnedy T a Fialovy R
+AltSoftSerial simcomComm; // D8 = Virtual RX (Connect TX from other device), D9 = Virtual TX (Connect RX from other device)
 const uint8_t ledPin = 13;
 const uint8_t tokenAddress = 0;
 const uint8_t tokenMaxLength = 32;
@@ -32,15 +32,32 @@ const uint8_t lonAddress = latAddress + 12;
 const uint8_t speedAddress = lonAddress + 12; // Length 6
 
 bool startupSendEnabled = false;
-uint8_t minimalDistanceDelta = 5; // meters
-uint8_t positionInterval = 15; // seconds
+uint8_t minimalDistanceDelta = 5; // minimal distance between last two location checks in meters
+uint8_t positionInterval = 15; // wait time between location checks in seconds
 
-bool locationAcquired = false;
-bool locationDeviation = false;
+bool locationAcquired = false; // true if location was acquired from SIMCOM
+bool locationDeviation = false; // true if location was changed more than minimalDistanceDelta
 
 String token = "";
 String imei = "";
 
+/**
+ * 
+ * @brief Initializes the Arduino Nano setup, including serial communication, modem configuration, 
+ *        GPS power-up, network connection, and optional startup message transmission.
+ * 
+ * This function performs the following steps:
+ * 1. Initializes the serial communication for debugging and modem communication.
+ * 2. Sets up the LED pin as an output.
+ * 3. Waits for the modem to initialize and configures the baud rate.
+ * 4. Reads the modem's IMEI for identification purposes.
+ * 5. Powers up the GPS module and waits for it to become operational.
+ * 6. Connects to the network and refreshes the authentication token.
+ * 7. Optionally sends a startup message if the `startupSendEnabled` flag is set.
+ * 
+ * @note This function contains blocking delays and loops, which may affect real-time performance.
+ *       Ensure that the `BAUD_RATE`, `ledPin`, and other constants are properly defined before use.
+ */
 void setup() {
   Serial.begin(BAUD_RATE);
   simcomComm.begin(115200);
@@ -76,12 +93,38 @@ void setup() {
   clearBuffer();
 }
 
+/**
+ * @brief Main loop function for the Arduino Nano IoT node.
+ * 
+ * This function continuously attempts to acquire the device's location, checks for location changes,
+ * and sends the location data to a server. It includes retry mechanisms for both location acquisition
+ * and data transmission, as well as a fallback mechanism to refresh the token after repeated failures.
+ * 
+ * The loop operates as follows:
+ * - Attempts to acquire the location using `getLocation()`.
+ * - If location acquisition fails, retries up to 5 times with a delay of 500ms between attempts.
+ * - If the location is successfully acquired but unchanged, the loop waits for the next cycle.
+ * - If the location is successfully acquired and changed, attempts to send the location using `sendLocation()`.
+ * - If sending the location fails, retries up to 5 times before refreshing the token.
+ * - Logs debug messages at each step to indicate success, failure, or retries.
+ * - Waits for a specified interval (`positionInterval`) before starting the next cycle.
+ * 
+ * @note The function uses the following helper functions:
+ * - `getLocation()`: Acquires the current location.
+ * - `sendLocation()`: Sends the acquired location to the server.
+ * - `refreshToken()`: Refreshes the authentication token after repeated failures.
+ * - `wait()`: Pauses execution for the specified interval.
+ * 
+ * @warning If the loop fails to acquire or send the location after multiple attempts, it refreshes the token,
+ * which may involve additional network operations.
+ */
 void loop() {
   uint8_t attempts = 0;
   do {
     getLocation();
     if (!locationAcquired) {
       DEBUG_PRINT_LN(F("--LOOP-FAIL--\nCant get location, retrying..."));
+      simcomComm.println(F("AT+CGNSSPWR=1"));
       delay(500);
       continue;
     }
@@ -105,6 +148,23 @@ void loop() {
 }
 
 // IMEI operations ------------------------------
+
+/**
+ * @brief Reads the IMEI (International Mobile Equipment Identity) from the SIM module.
+ * 
+ * This function sends the AT command "AT+CGSN" to the SIM module to request the IMEI.
+ * It then reads the response from the SIM module, processes it, and extracts the IMEI.
+ * The extracted IMEI is stored in the global variable `imei`.
+ * 
+ * @note The function uses a delay of 100ms to allow the SIM module to respond.
+ * @note Ensure that the `simcomComm` object is properly initialized and connected
+ *       to the SIM module before calling this function.
+ * 
+ * @warning This function assumes that the `extractIMEI` function is implemented
+ *          and correctly extracts the IMEI from the response string.
+ * 
+ * @see extractIMEI
+ */
 void readIMEI() {
   clearBuffer();
   simcomComm.println(F("AT+CGSN"));
@@ -118,6 +178,22 @@ void readIMEI() {
   imei = extractIMEI(response);
 }
 
+/**
+ * @brief Extracts the IMEI number from a given response string.
+ * 
+ * This function processes a response string, typically from a modem or 
+ * similar device, to extract the IMEI (International Mobile Equipment Identity) 
+ * number. It trims unnecessary characters and ensures the result contains 
+ * only numeric digits.
+ * 
+ * @param response The input string containing the response, which may include 
+ *                 the IMEI number and other data.
+ * @return A string containing the extracted IMEI number.
+ * 
+ * @note The function assumes that the response starts with "AT+CGSN" if the 
+ *       IMEI is included, and it removes this prefix before processing.
+ * @warning Function stops processing the response if it encounters a non-digit character.
+ */
 String extractIMEI(String response) {
   response.trim();
   if (response.startsWith("AT+CGSN")) {
@@ -135,6 +211,18 @@ String extractIMEI(String response) {
   return response;
 }
 
+/**
+ * @brief Establishes a connection to the network by configuring the SIMCOM module.
+ * 
+ * This function performs the following steps:
+ * 1. Sets the network attachment mode using the AT+CGATT command.
+ * 2. Configures the Access Point Name (APN) using the AT+CGDCONT command.
+ * 3. Activates the Packet Data Protocol (PDP) context using the AT+CGACT command.
+ * 
+ * Each step waits for a confirmation response from the SIMCOM module, with a timeout of 9000 milliseconds.
+ * 
+ * @note Ensure that the SIMCOM module is properly initialized and connected before calling this function.
+ */
 void connectToNetwork() {
   DEBUG_PRINT_LN(F("\nConnecting to network..."));
   clearBuffer();
@@ -149,6 +237,18 @@ void connectToNetwork() {
   waitForCommandConfirmation(9000);
 }
 
+/**
+ * @brief Checks the current network connection status and attempts to reconnect if disconnected.
+ * 
+ * This function first verifies if the device is currently connected to the network
+ * by calling `isConnected()`. If the device is connected, it immediately returns `true`.
+ * Otherwise, it attempts to reconnect by calling `connectToNetwork()`. After attempting
+ * to reconnect, it checks the connection status again and returns `true` if the connection
+ * was successfully re-established, or `false` if the connection attempt failed.
+ * 
+ * @return true If the device is connected to the network.
+ * @return false If the device is not connected and reconnection attempts failed.
+ */
 bool checkSignalAndReconnect() {
   if (isConnected()) {
     return true;
@@ -161,7 +261,21 @@ bool checkSignalAndReconnect() {
   }
 }
 
+/**
+ * @brief Checks the network connection status of the device.
+ * 
+ * This function sends an AT command ("AT+CREG?") to the SIMCOM module to query 
+ * the network registration status. It reads the response from the module and 
+ * determines if the device is connected to the network.
+ * 
+ * @return true if the device is connected to the network (registered in home 
+ *         or roaming network), false otherwise.
+ * 
+ * @note The function uses the `simcomComm` object for communication with the 
+ *       SIMCOM module.
+ */
 bool isConnected() {
+  DEBUG_PRINT_LN(F("\nChecking network connection..."));
   clearBuffer();
   simcomComm.println(F("AT+CREG?"));
   String response = "";
@@ -170,20 +284,50 @@ bool isConnected() {
   }
   if (response.indexOf("+CREG: 0,1") > -1 ||
       response.indexOf("+CREG: 0,5") > -1) {
-    return true;
+        DEBUG_PRINT_LN(F("Network connected!"));
+        return true;
   }
+  DEBUG_PRINT_LN(F("Network NOT connected!"));
   return false;
 }
 
 // Token operations -----------------------------
+
+/**
+ * @brief Refreshes the authentication token by invoking the token management process.
+ * 
+ * This function attempts to refresh the token by repeatedly calling the `tokenManagement` 
+ * function until it succeeds. If the token management cycle fails, it waits for 5 seconds before retrying.
+ * 
+ * @note This function blocks execution until the token management process completes successfully.
+ */
 void refreshToken() {
   DEBUG_PRINT_LN(F("\nRefreshing token..."));
   while (!tokenManagement()) {
     DEBUG_PRINT_LN(F("-----FATAL-----\nFailed whole token management cycle. Waiting to start new cycle...\n-----FATAL-----\n"));
     wait(5);
+    if (!isConnected()) {
+      checkSignalAndReconnect();
+    }
   }
 }
 
+/**
+ * @brief Manages the retrieval and verification of a token.
+ * 
+ * This function handles the process of obtaining a new token if necessary,
+ * verifying its validity, and ensuring it is stored correctly. It retries
+ * token retrieval and verification a specified number of times before
+ * reporting failure.
+ * 
+ * @return true If the token is successfully retrieved and verified.
+ * @return false If the token retrieval or verification fails.
+ * 
+ * The function performs the following steps:
+ * 1. Attempts to request a new token until successful.
+ * 2. Reads the token from EEPROM storage.
+ * 3. Verifies the token up to a maximum number of attempts.
+ */
 bool tokenManagement() {
   DEBUG_PRINT_LN(F("\nToken management..."));
   while (!requestNewToken()) {
@@ -207,6 +351,30 @@ bool tokenManagement() {
   return false;
 }
 
+/**
+ * @brief Requests a new token from the server and updates device settings based on the response.
+ * 
+ * This function initializes an HTTP session, sends a request to the server to retrieve a new token,
+ * and processes the server's response. If successful, the token and other configuration parameters
+ * are updated and saved to EEPROM.
+ * 
+ * @return true if a new token is successfully retrieved and processed, false otherwise.
+ * 
+ * @details
+ * - Sends an HTTP POST request to the server with the device's IMEI in JSON format.
+ * - Parses the server's response to extract the token and other configuration parameters:
+ *   - `position_check_freq`: Updates the interval for position checks (capped at 255).
+ *   - `min_distance_delta`: Updates the minimum distance delta for position updates (capped at 255).
+ *   - `manual_start`: Determines whether manual startup is enabled.
+ * - Saves the retrieved token to EEPROM for persistent storage.
+ * - Handles errors and logs debug information during the process.
+ * 
+ * @note The function uses a SIMCOM communication module for HTTP operations.
+ * @note Debugging information is printed using `DEBUG_PRINT` and `DETAILED_DEBUG_PRINT` macros.
+ * @note The function assumes the presence of helper functions like `clearBuffer`, `waitForCommandConfirmation`,
+ *   `parseJSON`, and `saveToEEPROM`.
+ * @note The HTTP session is terminated regardless of success or failure.
+ */
 bool requestNewToken() {
   DEBUG_PRINT_LN(F("\nRequesting new token..."));
   clearBuffer();
@@ -291,6 +459,32 @@ bool requestNewToken() {
   return false;
 }
 
+/**
+ * @brief Verifies the token by sending an HTTP request to the server.
+ * 
+ * This function initializes an HTTP session, sets the necessary parameters,
+ * and sends a JSON payload containing the token and IMEI to the server for verification.
+ * It processes the server's response to determine if the token is valid.
+ * 
+ * @return true if the token is successfully verified (HTTP 200 response), false otherwise.
+ * 
+ * @note The function uses the SIMCOM module for HTTP communication and assumes
+ *       that the `simcomComm` object is properly initialized and configured.
+ * @note The function also interacts with EEPROM to save the token upon successful verification.
+ * 
+ * @details
+ * - Sends an HTTP POST request to the URL "http://api.vehiclemap.xyz/verify_token".
+ * - The JSON payload includes:
+ *   - `token`: The token to be verified.
+ *   - `imei`: The IMEI of the device.
+ * - Waits for command confirmations and processes the response from the server.
+ * - If the response contains "+HTTPACTION: 1,200,", the token is considered verified.
+ * - Terminates the HTTP session after processing the response.
+ * 
+ * @warning Ensure that the `token` and `imei` variables are properly initialized
+ *          before calling this function.
+ * @warning The function uses blocking delays and may not be suitable for time-critical applications.
+ */
 bool verifyToken() {
   DEBUG_PRINT_LN(F("\nVerifying token..."));
   clearBuffer();
@@ -331,6 +525,26 @@ bool verifyToken() {
   return false;
 }
 
+/**
+ * @brief Parses a JSON string to extract the value associated with a given key.
+ * 
+ * This function takes a JSON-formatted string and a key, and attempts to extract
+ * the value corresponding to the key. The value can be either a string (enclosed
+ * in double quotes) or a non-string value (e.g., a number or boolean).
+ * 
+ * @param jsonString The JSON string to parse. It should be properly formatted.
+ * @param key The key whose associated value needs to be extracted.
+ * @return A String containing the value associated with the key, or an empty
+ *         string if the key is not found or parsing fails.
+ * 
+ * @note The function assumes that the JSON string is simple and does not handle
+ *       nested objects or arrays. It also does not validate the JSON format.
+ * 
+ * @example
+ * String json = "{\"temperature\":25,\"status\":\"ok\"}";
+ * String value = parseJSON(json, "temperature"); // Returns "25"
+ * String status = parseJSON(json, "status");     // Returns "ok"
+ */
 String parseJSON(String jsonString, String key) {
   DETAILED_DEBUG_PRINT(F("\nParsing JSON: "));
   DETAILED_DEBUG_PRINT_LN(jsonString);
@@ -363,7 +577,23 @@ String parseJSON(String jsonString, String key) {
   return "";
 }
 
-// Sending data to server -----------------------
+// Receiving coords and sending data to server -----------------------
+
+/**
+ * @brief Sends a startup message to the server using HTTP commands via a SIMCOM module.
+ * 
+ * This function initializes the HTTP service, sets the URL and content type, 
+ * sends a JSON payload containing a token, and performs an HTTP POST action. 
+ * It then reads the server's response to determine if the message was sent successfully.
+ * 
+ * @return true if the server responds with HTTP status 200, indicating success.
+ * @return false if the server response indicates failure or if an error occurs during the process.
+ * 
+ * @note The function uses a global `simcomComm` object for communication with the SIMCOM module 
+ *       and a global `token` variable for authentication.
+ * @note Debug messages are printed using `DEBUG_PRINT` and `DEBUG_PRINT_LN` macros.
+ * @note The function includes delays and waits for command confirmations to ensure proper communication.
+ */
 bool sendStartupMessage() {
   DEBUG_PRINT_LN(F("\nSending startup message to server..."));
   simcomComm.println(F("AT+HTTPINIT"));
@@ -394,10 +624,42 @@ bool sendStartupMessage() {
     DEBUG_PRINT_LN(F("-----OK-----\nStartup message sent successfully.\n-----OK-----\n"));
     return true;
   }
+  if (httpString.indexOf("+HTTPACTION: 1,403,") > -1) {
+    DEBUG_PRINT_LN(F("-----ERROR-----\nInvalid token detected.\n-----ERROR-----\n"));
+    return false;
+  }
   DEBUG_PRINT_LN(F("-----ERROR-----\nStartup message was NOT sent.\n-----ERROR-----\n"));
   return false;
 }
 
+/**
+ * @brief Retrieves the current GPS location, processes the data, and stores it if necessary.
+ * 
+ * This function communicates with a SIMCOM module to acquire the current location, speed, 
+ * and other related data. It validates the received data, checks for significant location 
+ * changes, and stores the new location in EEPROM if a deviation is detected.
+ * 
+ * @return void
+ * 
+ * @details
+ * - Sends the "AT+CGNSSINFO" command to the SIMCOM module to request location data.
+ * - Parses the response to extract latitude, longitude, and speed.
+ * - Validates the extracted data to ensure it is complete and accurate.
+ * - Compares the current location with the last saved location to determine if there 
+ *   is a significant change (based on `minimalDistanceDelta`).
+ * - Updates the EEPROM with the new location and speed if a deviation is detected.
+ * 
+ * @note The function uses global variables `locationAcquired` and `locationDeviation` 
+ *   to indicate the status of the location acquisition process.
+ * @note The function assumes the presence of helper functions like `calculateDistance`, 
+ *   `readFromEEPROM`, and `saveToEEPROM`.
+ * @note The function also assumes the existence of constants such as `latAddress`, 
+ *   `lonAddress`, `speedAddress`, and `minimalDistanceDelta`.
+ * 
+ * @warning If the GPS response is invalid or incomplete, the function will terminate early.
+ * @warning If the current location is the same as the last saved location, the function 
+ *   will skip updating the EEPROM.
+ */
 void getLocation() {
   locationAcquired = false;
   locationDeviation = false;
@@ -472,6 +734,29 @@ void getLocation() {
   }
 }
 
+/**
+ * @brief Sends the current location data to a remote server using HTTP.
+ * 
+ * This function constructs a JSON payload containing the token, latitude, 
+ * longitude, and speed, and sends it to a specified server endpoint using 
+ * HTTP POST. It handles the initialization and termination of the HTTP 
+ * session, as well as parsing the server's response to determine success 
+ * or failure.
+ * 
+ * @return true if the location was sent successfully (HTTP 200 or 403 response), 
+ *         false otherwise (e.g., HTTP 401 or other errors).
+ * 
+ * @details
+ * - The function uses the SIMCOM module for HTTP communication.
+ * - It reads the latitude, longitude, and speed values from EEPROM.
+ * - If the server responds with HTTP 401, the function attempts to refresh the token.
+ * 
+ * @note Ensure that the SIMCOM module is properly initialized and connected 
+ *       to the network before calling this function.
+ * 
+ * @warning This function blocks execution for several seconds due to delays 
+ *          and waiting for command confirmations.
+ */
 bool sendLocation() {
   digitalWrite(ledPin, HIGH);
   DEBUG_PRINT_LN(F("\nSending location to server..."));
@@ -523,6 +808,18 @@ bool sendLocation() {
 }
 
 // EEPROM operations ----------------------------
+
+/**
+ * @brief Saves a string to EEPROM.
+ * 
+ * This function saves a string to the EEPROM starting at the specified address
+ * and for the specified length. If the string is shorter than the length, it fills
+ * the remaining space with null characters.
+ * 
+ * @param data The string to save to EEPROM.
+ * @param address The starting address in EEPROM to save to.
+ * @param length The maximum length of the string to save.
+ */
 void saveToEEPROM(String data, uint8_t address, uint8_t length) {
   DETAILED_DEBUG_PRINT(F("Saving to EEPROM: "));
   DETAILED_DEBUG_PRINT_LN(data);
@@ -535,6 +832,16 @@ void saveToEEPROM(String data, uint8_t address, uint8_t length) {
   }
 }
 
+/**
+ * @brief Reads a string from EEPROM.
+ * 
+ * This function reads a string from the EEPROM starting at the specified address
+ * and for the specified length. It stops reading when it encounters a null character.
+ * 
+ * @param address The starting address in EEPROM to read from.
+ * @param length The maximum length of the string to read.
+ * @return String The string read from EEPROM.
+ */
 String readFromEEPROM(uint8_t address, uint8_t length) {
   String token = "";
   for (int i = 0; i < length; ++i) {
@@ -548,6 +855,14 @@ String readFromEEPROM(uint8_t address, uint8_t length) {
 }
 
 // Others ---------------------------------------
+
+/**
+ * @brief Waits for a specified number of seconds, blinking the LED.
+ * 
+ * This function blinks the LED on and off for the specified number of seconds.
+ * 
+ * @param seconds The number of seconds to wait.
+ */
 void wait(int seconds) {
   for (int i = 0; i < seconds * 2; ++i) {
     digitalWrite(ledPin, (i % 2 == 0) ? HIGH : LOW);
@@ -556,12 +871,24 @@ void wait(int seconds) {
   digitalWrite(ledPin, LOW);
 }
 
+/**
+ * @brief Clears the serial buffer of the SIMCOM modem.
+ * 
+ * This function reads all available data from the serial buffer
+ * to ensure it is empty before sending new commands.
+ */
 void clearBuffer() {
   while (simcomComm.available()) {
     simcomComm.read();
   }
 }
 
+/**
+ * @brief Waits for the SIMCOM modem to initialize.
+ * 
+ * This function sends an AT command to the modem and waits for a response.
+ * It will keep trying until it receives an "OK" response or times out.
+ */
 void waitForModemToInitialize() {
   clearBuffer();
   DEBUG_PRINT_LN(F("\nWaiting for modem to initialize..."));
@@ -589,6 +916,15 @@ void waitForModemToInitialize() {
   DEBUG_PRINT_LN(F("\nModem initialization failed!"));
 }
 
+/**
+ * @brief Waits for a command confirmation from the SIMCOM module.
+ * 
+ * This function checks the serial buffer for a response from the SIMCOM module
+ * and waits for a specified maximum time. It looks for "OK" or "ERROR" in the response.
+ * 
+ * @param maxWaitTime The maximum time to wait for a response in milliseconds.
+ * @return true if "OK" is received, false if "ERROR" is received or timeout occurs.
+ */
 bool waitForCommandConfirmation(int maxWaitTime) {
   DEBUG_PRINT(F("\nWaiting for OK..."));
   unsigned long startTime = millis();
@@ -619,6 +955,18 @@ bool waitForCommandConfirmation(int maxWaitTime) {
   return false;
 }
 
+/**
+ * @brief Calculates the great-circle distance between two points on the Earth's surface.
+ * 
+ * This function uses the Haversine formula to compute the shortest distance over the Earth's surface
+ * between two geographic coordinates specified in degrees.
+ * 
+ * @param lat1 Latitude of the first point in degrees.
+ * @param lon1 Longitude of the first point in degrees.
+ * @param lat2 Latitude of the second point in degrees.
+ * @param lon2 Longitude of the second point in degrees.
+ * @return float The distance between the two points in meters.
+ */
 float calculateDistance(float lat1, float lon1, float lat2, float lon2) {
   const float R = 6378000;
   float dLat = radians(lat2 - lat1);
@@ -633,6 +981,14 @@ float calculateDistance(float lat1, float lon1, float lat2, float lon2) {
   return R * c;
 }
 
+/**
+ * @brief Calculates the amount of free memory available on the Arduino.
+ * 
+ * This function estimates the amount of free memory by checking the difference
+ * between the address of a local variable and the end of the heap.
+ * 
+ * @return int The amount of free memory in bytes.
+ */
 int freeMemory() {
   extern int __heap_start, *__brkval;
   int v;
