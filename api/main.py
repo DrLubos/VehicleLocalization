@@ -220,22 +220,23 @@ async def post_route(data: RouteCreationRequest,
         dict: A dictionary containing success status, message, and ID of the newly created route.
 
     Raises:
-        HTTPException: If the vehicle is not found (404).
+        HTTPException: If the vehicle is not found (401).
         HTTPException: If the vehicle's status is not 'active' or 'registered' (403).
         HTTPException: If no active assignment is found for the vehicle (404).
+        HTTPException: If manual route start is not allowed for the vehicle (403).
         HTTPException: If there is a database error during the commit (500).
     """
     now = datetime.datetime.utcnow()
     vehicle = await get_vehicle_by_token(session, data.token)
     if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
+        raise HTTPException(status_code=401, detail="Vehicle not found")
     if vehicle.status not in (VehicleStatus.ACTIVE, VehicleStatus.REGISTERED):
         raise HTTPException(status_code=403, detail="Post route is not allowed for this vehicle")
     assignment = await get_active_assignment_by_vehicle(session, vehicle.id)
     if assignment is None:
         raise HTTPException(status_code=404, detail="No active assignment found for this vehicle")
     if not vehicle.manual_route_start_enabled:
-        return {"success": True, "message": "Manual route start is disabled"}
+        raise HTTPException(status_code=403, detail="Manual route start disabled for this vehicle")
     route_result = await session.execute(
         select(Route)
         .filter(Route.assignment_id == assignment.id)
