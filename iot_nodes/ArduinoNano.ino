@@ -299,8 +299,8 @@ bool isConnected() {
   while (simcomComm.available()) {
     response += (char)simcomComm.read();
   }
-  if (response.indexOf("+CREG: 0,1") > -1 ||
-      response.indexOf("+CREG: 0,5") > -1) {
+  if (response.indexOf(F("+CREG: 0,1")) > -1 ||
+      response.indexOf(F("+CREG: 0,5")) > -1) {
         DEBUG_PRINT_LN(F("--Method-Result--isConnected: Connected"));
         return true;
   }
@@ -428,12 +428,12 @@ bool requestNewToken() {
   while (simcomComm.available()) {
     httpString += (char)simcomComm.read();
   }
-  DEBUG_PRINT("Response from server in request token: ");
+  DEBUG_PRINT(F("Response from server in request token: "));
   DEBUG_PRINT_LN(httpString);
-  if (httpString.indexOf("+HTTPACTION: ") != -1) {
-    if (httpString.indexOf("+HTTPACTION: 1,200,") > -1) {
+  if (httpString.indexOf(F("+HTTPACTION: ")) != -1) {
+    if (httpString.indexOf(F("+HTTPACTION: 1,200,")) > -1) {
       String responseLength;
-      for (uint8_t i = httpString.lastIndexOf(",") + 1; i < httpString.length(); ++i) {
+      for (uint8_t i = httpString.lastIndexOf(F(",")) + 1; i < httpString.length(); ++i) {
         responseLength += httpString[i];
       }
       clearBuffer();
@@ -451,8 +451,8 @@ bool requestNewToken() {
       DEBUG_PRINT_LN(httpString);
       simcomComm.println(F("AT+HTTPTERM"));
       waitForCommandConfirmation(12000);
-      if (httpString.indexOf("{") != -1) {
-        httpString.remove(0, httpString.indexOf("{") - 1);
+      if (httpString.indexOf(F("{")) != -1) {
+        httpString.remove(0, httpString.indexOf(F("{")) - 1);
         String token = parseJSON(httpString, "token");
         DEBUG_PRINT(F("New token: "));
         DEBUG_PRINT_LN(token);
@@ -484,7 +484,7 @@ bool requestNewToken() {
         }
       }
     }
-    if (httpString.indexOf("+HTTPACTION: 1,400,") > -1) {
+    if (httpString.indexOf(F("+HTTPACTION: 1,400,")) > -1) {
       DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Invalid IMEI"));
       readIMEI();
       return false;
@@ -548,12 +548,12 @@ bool verifyToken() {
   while (simcomComm.available()) {
     httpString += (char)simcomComm.read();
   }
-  DEBUG_PRINT("Response from server in verify token: ");
+  DEBUG_PRINT(F("Response from server in verify token: "));
   DEBUG_PRINT_LN(httpString);
   simcomComm.println(F("AT+HTTPTERM"));
   waitForCommandConfirmation(12000);
-  if (httpString.indexOf("+HTTPACTION: ") != -1) {
-    if (httpString.indexOf("+HTTPACTION: 1,200,") > -1) {
+  if (httpString.indexOf(F("+HTTPACTION: ")) != -1) {
+    if (httpString.indexOf(F("+HTTPACTION: 1,200,")) > -1) {
       DEBUG_PRINT_LN(F("---Method-Result--verifyToken: Was verified"));
       return true;
     }
@@ -596,11 +596,11 @@ String parseJSON(String jsonString, String key) {
     int endIndex;
     if (firstChar == '"') {
       ++startIndex;
-      endIndex = jsonString.indexOf("\"", startIndex);
+      endIndex = jsonString.indexOf(F("\""), startIndex);
     } else {
-      endIndex = jsonString.indexOf(",", startIndex);
+      endIndex = jsonString.indexOf(F(","), startIndex);
       if (endIndex == -1) {
-        endIndex = jsonString.indexOf("}", startIndex);
+        endIndex = jsonString.indexOf(F("}"), startIndex);
       }
     }
     if (endIndex > startIndex) {
@@ -655,15 +655,15 @@ bool sendStartupMessage() {
   while (simcomComm.available()) {
     httpString += (char)simcomComm.read();
   }
-  DEBUG_PRINT("Response from server in startup message: ");
+  DEBUG_PRINT(F("Response from server in startup message: "));
   DEBUG_PRINT_LN(httpString);
   simcomComm.println(F("AT+HTTPTERM"));
   waitForCommandConfirmation(12000);
-  if (httpString.indexOf("+HTTPACTION: 1,200,") > -1) {
+  if (httpString.indexOf(F("+HTTPACTION: 1,200,")) > -1) {
     DEBUG_PRINT_LN(F("--Method-Result--sendStartupMessage: Sent successfully"));
     return true;
   }
-  if (httpString.indexOf("+HTTPACTION: 1,401,") > -1) {
+  if (httpString.indexOf(F("+HTTPACTION: 1,401,")) > -1) {
     DEBUG_PRINT_LN(F("--Method-Result--sendStartupMessage: Invalid token"));
     refreshToken();
     return false;
@@ -715,7 +715,7 @@ void getLocation() {
   }
   DETAILED_DEBUG_PRINT(F("Response from GPS: "));
   DETAILED_DEBUG_PRINT_LN(gpsResponse);
-  int startIndex = gpsResponse.indexOf("+CGNSSINFO: ");
+  int startIndex = gpsResponse.indexOf(F("+CGNSSINFO: "));
   if (startIndex != -1) {
     String lat = "";
     String lon = "";
@@ -834,12 +834,12 @@ bool sendLocation() {
   digitalWrite(ledPin, LOW);
   DETAILED_DEBUG_PRINT(F("Response from server in send location: "));
   DETAILED_DEBUG_PRINT_LN(communicationString);
-  if (communicationString.indexOf("+HTTPACTION: 1,200,") > -1 ||
-      communicationString.indexOf("+HTTPACTION: 1,403,") > -1) {
+  if (communicationString.indexOf(F("+HTTPACTION: 1,200,")) > -1 ||
+      communicationString.indexOf(F("+HTTPACTION: 1,403,")) > -1) {
     DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Location sent successfully"));
     return true;
   }
-  if (communicationString.indexOf("+HTTPACTION: 1,401,") > -1) {
+  if (communicationString.indexOf(F("+HTTPACTION: 1,401,")) > -1) {
     DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Location was NOT sent. Invalid token"));
     refreshToken();
     return false;
@@ -937,7 +937,7 @@ void waitForModemToInitialize() {
   unsigned long startTime = millis();
   const unsigned long timeout = 30000;
   while (millis() - startTime < timeout) {
-    simcomComm.println("AT");
+    simcomComm.println(F("AT"));
     delay(100);
     if (simcomComm.available()) {
       String response = "";
@@ -946,7 +946,7 @@ void waitForModemToInitialize() {
       }
       DETAILED_DEBUG_PRINT(F("Response: "));
       DETAILED_DEBUG_PRINT_LN(response);
-      if (response.indexOf("OK") != -1) {
+      if (response.indexOf(F("OK")) != -1) {
         clearBuffer();
         DEBUG_PRINT_LN(F("Modem Initialized!"));
         return;
@@ -955,7 +955,7 @@ void waitForModemToInitialize() {
     delay(100);
     DETAILED_DEBUG_PRINT(F("Not ready... "));
   }
-  DEBUG_PRINT_LN(F("\n--Method-Result--waitForModemToInitialize: initialization failed"));
+  DEBUG_PRINT_LN(F("--Method-Result--waitForModemToInitialize: initialization failed"));
 }
 
 /**
@@ -980,7 +980,7 @@ void waitForModemToInitialize() {
  *          rate for the SIMCOM module.
  */
 void checkBaudRate() {
-  DEBUG_PRINT_LN(F("\n--Method-Start--checkBaudRate"));
+  DEBUG_PRINT_LN(F("--Method-Start--checkBaudRate"));
   clearBuffer();
   simcomComm.println(F("AT"));
   if (waitForCommandConfirmation(7000)) {
@@ -1013,7 +1013,7 @@ void checkBaudRate() {
       }
     }
     ++attempts;
-  } while (!(response.indexOf("OK") != -1 || response.indexOf("K") != -1));
+  } while (!(response.indexOf(F("OK")) != -1 || response.indexOf(F("K")) != -1));
   simcomComm.end();
   delay(250);
   simcomComm.begin(BAUD_RATE);
@@ -1044,17 +1044,17 @@ bool waitForCommandConfirmation(int maxWaitTime) {
       String response = "";
       while (simcomComm.available()) {
         response += char(simcomComm.read());
-        if (response.indexOf("OK") != -1) {
+        if (response.indexOf(F("OK")) != -1) {
           DETAILED_DEBUG_PRINT(F("Response: "));
           DETAILED_DEBUG_PRINT_LN(response);
           return true;
         }
-        if (response.indexOf("CGNSS") != -1) {
+        if (response.indexOf(F("CGNSS")) != -1) {
           DETAILED_DEBUG_PRINT(F("Response: "));
           DETAILED_DEBUG_PRINT_LN(response);
           return true;
         }
-        if (response.indexOf("ERROR") != -1) {
+        if (response.indexOf(F("ERROR")) != -1) {
           DETAILED_DEBUG_PRINT(F("Response: "));
           DETAILED_DEBUG_PRINT_LN(response);
           return false;
