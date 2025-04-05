@@ -61,26 +61,20 @@ bool locationDeviation = false; // true if location was changed more than minima
  */
 void setup() {
   Serial.begin(BAUD_RATE);
-  simcomComm.begin(115200);
+  simcomComm.begin(BAUD_RATE);
   DEBUG_PRINT_LN(F("--Method-Start--Setup"));
   pinMode(ledPin, OUTPUT);
   delay(3000);
   waitForModemToInitialize();
-  delay(2000);
-  DEBUG_PRINT_LN(F("Changing baud rate to 38400..."));
-  simcomComm.println(("AT+IPR=") + String(BAUD_RATE));
-  simcomComm.end();
   delay(250);
-  simcomComm.begin(BAUD_RATE);
-  delay(250);
-  waitForModemToInitialize();
+  checkBaudRate();
   simcomComm.println(F("AT+CGNSSPWR=1"));
   clearBuffer();
   while (!simcomComm.available()) {
     delay(250);
-    DETAILED_DEBUG_PRINT(F("Waiting for GPS to power up..."));
+    DETAILED_DEBUG_PRINT_LN(F("Waiting for GPS to power up..."));
   }
-  DETAILED_DEBUG_PRINT_LN(F("\nGPS powered up!"));
+  DEBUG_PRINT_LN(F("GPS powered up!"));
   readIMEI();
   connectToNetwork();
   delay(1000);
@@ -939,7 +933,7 @@ void clearBuffer() {
  */
 void waitForModemToInitialize() {
   clearBuffer();
-  DEBUG_PRINT_LN(F("\n--Method-Start--waitForModemToInitialize"));
+  DEBUG_PRINT_LN(F("--Method-Start--waitForModemToInitialize"));
   unsigned long startTime = millis();
   const unsigned long timeout = 30000;
   while (millis() - startTime < timeout) {
@@ -965,6 +959,73 @@ void waitForModemToInitialize() {
 }
 
 /**
+ * @brief Checks and adjusts the baud rate of the SIMCOM communication module.
+ * 
+ * This function verifies if the current baud rate is correct by sending an "AT" 
+ * command and waiting for a confirmation. If the baud rate is incorrect, it attempts 
+ * to change it to the desired baud rate defined by the `BAUD_RATE` macro. The function 
+ * performs the following steps:
+ * 
+ * 1. Sends an "AT" command to check the current baud rate.
+ * 2. If the baud rate is incorrect, it switches to a default baud rate of 115200.
+ * 3. Sends an "AT+IPR=<BAUD_RATE>" command to set the desired baud rate.
+ * 4. Verifies if the baud rate change was successful by sending another "AT" command.
+ * 
+ * 
+ * @note The function uses a retry mechanism to ensure the baud rate is set correctly.
+ *       If the response contains unknown characters or the baud rate cannot be set 
+ *       after multiple attempts, it changes baud rate to defined baud rate.
+ * 
+ * @warning Ensure that the `BAUD_RATE` macro is defined and matches the desired baud 
+ *          rate for the SIMCOM module.
+ */
+void checkBaudRate() {
+  DEBUG_PRINT_LN(F("\n--Method-Start--checkBaudRate"));
+  clearBuffer();
+  simcomComm.println(F("AT"));
+  if (waitForCommandConfirmation(7000)) {
+    DEBUG_PRINT_LN(F("Baud rate is correct"));
+    return;
+  }
+  DETAILED_DEBUG_PRINT_LN(F("Starting communication with 115200 baud rate"));
+  simcomComm.end();
+  delay(250);
+  simcomComm.begin(115200);
+  delay(250);
+  int attempts = 0;
+  String response;
+  do {
+    DETAILED_DEBUG_PRINT_LN(F("Changing baud rate"));
+    simcomComm.println(("AT+IPR=") + String(BAUD_RATE));
+    delay(10);
+    response = "";
+    while (simcomComm.available()) {
+      response += char(simcomComm.read());
+    }
+    delay(250);
+    DETAILED_DEBUG_PRINT(F("Response: "));
+    DETAILED_DEBUG_PRINT_LN(response);
+    if (attempts > 10) {
+      if (response.length() > 0 && (response[0] < 'A' || response[0] > 'z')) {
+        DEBUG_PRINT(F("Unknown character received in response: "));
+        DEBUG_PRINT_LN(response);
+        break;
+      }
+    }
+    ++attempts;
+  } while (!(response.indexOf("OK") != -1 || response.indexOf("K") != -1));
+  simcomComm.end();
+  delay(250);
+  simcomComm.begin(BAUD_RATE);
+  delay(250);
+  if (waitForCommandConfirmation(7000)) {
+    DEBUG_PRINT_LN(F("Baud rate changed successfully"));
+  } else {
+    DEBUG_PRINT_LN(F("Failed to change baud rate"));
+  }
+}
+
+/**
  * @brief Waits for a command confirmation from the SIMCOM module.
  * 
  * This function checks the serial buffer for a response from the SIMCOM module
@@ -975,7 +1036,7 @@ void waitForModemToInitialize() {
  */
 bool waitForCommandConfirmation(int maxWaitTime) {
   delay(2);
-  DEBUG_PRINT(F("\n--Method-Start--waitForCommandConfirmation"));
+  DEBUG_PRINT_LN(F("--Method-Start--waitForCommandConfirmation"));
   unsigned long startTime = millis();
   int attempts = 0;
   while (millis() - startTime < maxWaitTime) {
