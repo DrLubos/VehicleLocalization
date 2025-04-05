@@ -2,7 +2,9 @@
 #include <EEPROM.h>
 #include <math.h>
 
-#define BAUD_RATE 38400
+#define BAUD_RATE 38400 // Baud rate for SiMCOM communication and PC debugging communication
+
+#define APN "internet" // APN for the SIMCOM module
 
 #define DEBUGGING_LEVEL 2
 
@@ -25,21 +27,20 @@
 
 AltSoftSerial simcomComm; // D8 = Virtual RX (Connect TX from other device), D9 = Virtual TX (Connect RX from other device)
 const uint8_t ledPin = 13;
-const uint8_t tokenAddress = 0;
+const uint8_t tokenAddress = 0; // Length 32
 const uint8_t tokenMaxLength = 32;
-const uint8_t latAddress = 0 + tokenMaxLength;
-const uint8_t lonAddress = latAddress + 12;
+const uint8_t latAddress = tokenMaxLength; // Length 12
+const uint8_t lonAddress = latAddress + 12; // Length 12
 const uint8_t speedAddress = lonAddress + 12; // Length 6
+const uint8_t imeiAddress = speedAddress + 6; // Length 15
 
 bool startupSendEnabled = false;
-uint8_t minimalDistanceDelta = 5; // minimal distance between last two location checks in meters
-uint8_t positionInterval = 15; // wait time between location checks in seconds
+uint8_t minimalDistanceDelta = 5; // minimal distance between saved coordinates and current coordinates in meters
+uint8_t positionInterval = 30; // wait time between location checks in seconds
 
 bool locationAcquired = false; // true if location was acquired from SIMCOM
 bool locationDeviation = false; // true if location was changed more than minimalDistanceDelta
 
-String token = "";
-String imei = "";
 
 /**
  * 
@@ -61,8 +62,9 @@ String imei = "";
 void setup() {
   Serial.begin(BAUD_RATE);
   simcomComm.begin(115200);
-  DEBUG_PRINT_LN(F("Starting communication at 115200 baud..."));
+  DEBUG_PRINT_LN(F("--Method-Start--Setup"));
   pinMode(ledPin, OUTPUT);
+  delay(3000);
   waitForModemToInitialize();
   delay(2000);
   DEBUG_PRINT_LN(F("Changing baud rate to 38400..."));
@@ -72,7 +74,6 @@ void setup() {
   simcomComm.begin(BAUD_RATE);
   delay(250);
   waitForModemToInitialize();
-  readIMEI();
   simcomComm.println(F("AT+CGNSSPWR=1"));
   clearBuffer();
   while (!simcomComm.available()) {
@@ -80,6 +81,7 @@ void setup() {
     DETAILED_DEBUG_PRINT(F("Waiting for GPS to power up..."));
   }
   DETAILED_DEBUG_PRINT_LN(F("\nGPS powered up!"));
+  readIMEI();
   connectToNetwork();
   delay(1000);
   refreshToken();
@@ -166,16 +168,36 @@ void loop() {
  * @see extractIMEI
  */
 void readIMEI() {
+  DEBUG_PRINT_LN(F("--Method-Start--readIMEI"));
   clearBuffer();
-  simcomComm.println(F("AT+CGSN"));
-  delay(100);
+  int attempts = 0;
   String response = "";
-  while (simcomComm.available()) {
-    response += char(simcomComm.read());
+  while (attempts < 5) {
+    simcomComm.println(F("AT+CGSN"));
+    unsigned long startTime = millis();
+    while (millis() - startTime < 9000) {
+      if (simcomComm.available()) {
+        break;
+      }
+    }
+    while (simcomComm.available()) {
+      response += char(simcomComm.read());
+    }
+    DEBUG_PRINT(F("--Method-Result--readIMEI\nResponse: "));
+    DEBUG_PRINT_LN(response);
+    response = extractIMEI(response);
+    if (response.length() >= 15) {
+      break;
+    }
+    DEBUG_PRINT_LN(F("--Method-Result--readIMEI: IMEI was not read correctly"));
+    ++attempts;
   }
-  DETAILED_DEBUG_PRINT(F("\nIMEI response: "));
-  DETAILED_DEBUG_PRINT_LN(response);
-  imei = extractIMEI(response);
+  if (response.length() < 15) {
+    DEBUG_PRINT_LN(F("--Method-Result--readIMEI: IMEI was not read correctly after 5 attempts"));
+    return;
+  }
+  DEBUG_PRINT_LN(F("--Method-Result--readIMEI: IMEI was read correctly"));
+  saveToEEPROM(response, imeiAddress, 15);
 }
 
 /**
@@ -206,7 +228,7 @@ String extractIMEI(String response) {
       break;
     }
   }
-  DEBUG_PRINT(F("\nExtracted IMEI: "));
+  DEBUG_PRINT(F("--Method-Result--extractIMEI\nResponse: "));
   DEBUG_PRINT_LN(response);
   return response;
 }
@@ -224,17 +246,18 @@ String extractIMEI(String response) {
  * @note Ensure that the SIMCOM module is properly initialized and connected before calling this function.
  */
 void connectToNetwork() {
-  DEBUG_PRINT_LN(F("\nConnecting to network..."));
+  DEBUG_PRINT_LN(F("--Method-Start--connectToNetwork"));
   clearBuffer();
   DETAILED_DEBUG_PRINT_LN(F("Setting network mode..."));
   simcomComm.println(F("AT+CGATT=1"));
   waitForCommandConfirmation(9000);
   DETAILED_DEBUG_PRINT_LN(F("Setting APN..."));
-  simcomComm.println(F("AT+CGDCONT=1,\"IP\",\"internet\""));
+  simcomComm.println(String("AT+CGDCONT=1,\"IP\",\"") + APN + "\"");
   waitForCommandConfirmation(9000);
   DETAILED_DEBUG_PRINT_LN(F("Setting PDP context..."));
   simcomComm.println(F("AT+CGACT=1,1"));
   waitForCommandConfirmation(9000);
+  DEBUG_PRINT_LN(F("--Method-Result--connectToNetwork"));
 }
 
 /**
@@ -275,7 +298,7 @@ bool checkSignalAndReconnect() {
  *       SIMCOM module.
  */
 bool isConnected() {
-  DEBUG_PRINT_LN(F("\nChecking network connection..."));
+  DEBUG_PRINT_LN(F("--Method-Start--isConnected"));
   clearBuffer();
   simcomComm.println(F("AT+CREG?"));
   String response = "";
@@ -284,10 +307,10 @@ bool isConnected() {
   }
   if (response.indexOf("+CREG: 0,1") > -1 ||
       response.indexOf("+CREG: 0,5") > -1) {
-        DEBUG_PRINT_LN(F("Network connected!"));
+        DEBUG_PRINT_LN(F("--Method-Result--isConnected: Connected"));
         return true;
   }
-  DEBUG_PRINT_LN(F("Network NOT connected!"));
+  DEBUG_PRINT_LN(F("--Method-Result--isConnected: Not connected"));
   return false;
 }
 
@@ -302,13 +325,14 @@ bool isConnected() {
  * @note This function blocks execution until the token management process completes successfully.
  */
 void refreshToken() {
-  DEBUG_PRINT_LN(F("\nRefreshing token..."));
+  DEBUG_PRINT_LN(F("--Method-Start--refreshToken"));
   while (!tokenManagement()) {
-    DEBUG_PRINT_LN(F("-----FATAL-----\nFailed whole token management cycle. Waiting to start new cycle...\n-----FATAL-----\n"));
-    wait(5);
+    DEBUG_PRINT_LN(F("--Method-Result--refreshToken: Failed to refresh token"));
+    wait(2);
     if (!isConnected()) {
       checkSignalAndReconnect();
     }
+    wait(2);
   }
 }
 
@@ -329,25 +353,24 @@ void refreshToken() {
  * 3. Verifies the token up to a maximum number of attempts.
  */
 bool tokenManagement() {
-  DEBUG_PRINT_LN(F("\nToken management..."));
+  DEBUG_PRINT_LN(F("--Method-Start--tokenManagement"));
   while (!requestNewToken()) {
     DEBUG_PRINT_LN(F("Failed to retrieve a valid token. Retrying..."));
     wait(3);
   }
   uint8_t maxVerifyAttempts = 5;
-  token = readFromEEPROM(tokenAddress, tokenMaxLength);
   while (maxVerifyAttempts > 0) {
     if (verifyToken()) {
-      DEBUG_PRINT_LN(F("-----OK-----\nToken successfully verified.\n-----OK-----\n"));
+      DEBUG_PRINT_LN(F("---Method-Result--tokenManagement: Verified successfully"));
       return true;
     } else {
-     DEBUG_PRINT_LN(F("-----ERROR-----\nInvalid token detected.\n-----ERROR-----\n"));
+     DEBUG_PRINT_LN(F("--Method-Result--tokenManagement: Verification failed"));
       return false;
     }
     --maxVerifyAttempts;
     wait(3);
   }
-  DEBUG_PRINT_LN(F("-----FATAL-----\nFailed to verify token.\n-----FATAL-----\n"));
+  DEBUG_PRINT_LN(F("--Method-Result--tokenManagement: Failed to verify token"));
   return false;
 }
 
@@ -376,7 +399,7 @@ bool tokenManagement() {
  * @note The HTTP session is terminated regardless of success or failure.
  */
 bool requestNewToken() {
-  DEBUG_PRINT_LN(F("\nRequesting new token..."));
+  DEBUG_PRINT_LN(F("--Method-Start--requestNewToken"));
   clearBuffer();
   simcomComm.println(F("AT+HTTPINIT"));
   waitForCommandConfirmation(12000);
@@ -384,6 +407,16 @@ bool requestNewToken() {
   waitForCommandConfirmation(12000);
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
+  String imei = readFromEEPROM(imeiAddress, 15);
+  if (imei.length() < 15) {
+    DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: IMEI was not read correctly"));
+    readIMEI();
+    imei = readFromEEPROM(imeiAddress, 15);
+    if (imei.length() < 15) {
+      DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: IMEI was not read correctly after 5 attempts"));
+      return false;
+    }
+  }
   String httpString = "{\"imei\":\"" + imei + "\"}";
   simcomComm.print(F("AT+HTTPDATA="));
   simcomComm.print(httpString.length());
@@ -397,7 +430,7 @@ bool requestNewToken() {
   simcomComm.println(F("AT+HTTPACTION=1"));
   waitForCommandConfirmation(12000);
   httpString = "";
-  delay(1000);
+  delay(500);
   while (simcomComm.available()) {
     httpString += (char)simcomComm.read();
   }
@@ -423,23 +456,25 @@ bool requestNewToken() {
       DEBUG_PRINT(F("Response: "));
       DEBUG_PRINT_LN(httpString);
       simcomComm.println(F("AT+HTTPTERM"));
+      waitForCommandConfirmation(12000);
       if (httpString.indexOf("{") != -1) {
         httpString.remove(0, httpString.indexOf("{") - 1);
-        token = parseJSON(httpString, "token");
+        String token = parseJSON(httpString, "token");
         DEBUG_PRINT(F("New token: "));
         DEBUG_PRINT_LN(token);
         if (token.length() > 0) {
-          int value = parseJSON(httpString, "position_check_freq").toInt() - 3;
-          if (value > -3) {
-            value = (value < 0) ? 0 : value;
+          saveToEEPROM(token, tokenAddress, tokenMaxLength);
+          int value = parseJSON(httpString, "position_check_freq").toInt();
+          if (value >= 0) {
             positionInterval = (value > 255) ? 255 : value;
           }
+          token.remove(0, token.length());
           value = parseJSON(httpString, "min_distance_delta").toInt();
           if (value >= 0) {
             minimalDistanceDelta = (value > 255) ? 255 : value;
           }
-          String startupResponse = parseJSON(httpString, "manual_start");
-          if (startupResponse.startsWith("true")) {
+          token = parseJSON(httpString, "manual_start");
+          if (token.startsWith("true")) {
             startupSendEnabled = true;
           } else {
             startupSendEnabled = false;
@@ -449,16 +484,21 @@ bool requestNewToken() {
           DEBUG_PRINT(F("Position Interval: "));
           DEBUG_PRINT_LN(String(positionInterval));
           DEBUG_PRINT(F("Manual startup: "));
-          DEBUG_PRINT_LN(startupResponse);
-          saveToEEPROM(token, tokenAddress, tokenMaxLength);
-          DEBUG_PRINT_LN(F("----OK-----\nToken saved to EEPROM.\n----OK-----\n"));
+          DEBUG_PRINT_LN(token);
+          DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Token retrieved successfully"));
           return true;
         }
       }
     }
+    if (httpString.indexOf("+HTTPACTION: 1,400,") > -1) {
+      DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Invalid IMEI"));
+      readIMEI();
+      return false;
+    }
   }
   simcomComm.println(F("AT+HTTPTERM"));
-  DEBUG_PRINT_LN(F("-----ERROR-----\nFailed to retrieve new token.\n-----ERROR-----\n"));
+  waitForCommandConfirmation(12000);
+  DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Failed to get token"));
   return false;
 }
 
@@ -489,7 +529,7 @@ bool requestNewToken() {
  * @warning The function uses blocking delays and may not be suitable for time-critical applications.
  */
 bool verifyToken() {
-  DEBUG_PRINT_LN(F("\nVerifying token..."));
+  DEBUG_PRINT_LN(F("--Method-Start--verifyToken"));
   clearBuffer();
   simcomComm.println(F("AT+HTTPINIT"));
   waitForCommandConfirmation(12000);
@@ -497,7 +537,7 @@ bool verifyToken() {
   waitForCommandConfirmation(12000);
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
-  String httpString = "{\"token\":\"" + token + "\", \"imei\":\"" + imei + "\"}";
+  String httpString = "{\"token\":\"" + readFromEEPROM(tokenAddress, tokenMaxLength) + "\", \"imei\":\"" + readFromEEPROM(imeiAddress, 15) + "\"}";
   simcomComm.print(F("AT+HTTPDATA="));
   simcomComm.print(httpString.length());
   simcomComm.println(F(",10000"));
@@ -520,11 +560,11 @@ bool verifyToken() {
   waitForCommandConfirmation(12000);
   if (httpString.indexOf("+HTTPACTION: ") != -1) {
     if (httpString.indexOf("+HTTPACTION: 1,200,") > -1) {
-      DEBUG_PRINT_LN(F("-----OK-----\nToken verified and saved to EEPROM.\n-----OK-----\n"));
+      DEBUG_PRINT_LN(F("---Method-Result--verifyToken: Was verified"));
       return true;
     }
   }
-  DEBUG_PRINT_LN(F("-----ERROR-----\nToken is NOT verified.\n-----ERROR-----\n"));
+  DEBUG_PRINT_LN(F("--Method-Result--verifyToken: Was NOT verified"));
   return false;
 }
 
@@ -549,7 +589,7 @@ bool verifyToken() {
  * String status = parseJSON(json, "status");     // Returns "ok"
  */
 String parseJSON(String jsonString, String key) {
-  DETAILED_DEBUG_PRINT(F("\nParsing JSON: "));
+  DETAILED_DEBUG_PRINT(F("--Method-Start--parseJSON\nString: "));
   DETAILED_DEBUG_PRINT_LN(jsonString);
   DETAILED_DEBUG_PRINT(F("Key: "));
   DETAILED_DEBUG_PRINT_LN(key);
@@ -570,12 +610,12 @@ String parseJSON(String jsonString, String key) {
       }
     }
     if (endIndex > startIndex) {
-      DETAILED_DEBUG_PRINT(F("Parsed value: "));
+      DETAILED_DEBUG_PRINT(F("--Method-Result--parseJSON: "));
       DETAILED_DEBUG_PRINT_LN(jsonString.substring(startIndex, endIndex));
       return jsonString.substring(startIndex, endIndex);
     }
   }
-  DETAILED_DEBUG_PRINT(F("Failed to parse JSON value for key: "));
+  DETAILED_DEBUG_PRINT(F("--Method-Result--parseJSON: cannot find key: "));
   DETAILED_DEBUG_PRINT_LN(key);
   return "";
 }
@@ -598,14 +638,15 @@ String parseJSON(String jsonString, String key) {
  * @note The function includes delays and waits for command confirmations to ensure proper communication.
  */
 bool sendStartupMessage() {
-  DEBUG_PRINT_LN(F("\nSending startup message to server..."));
+  DEBUG_PRINT_LN(F("--Method-Start--sendStartupMessage"));
+  clearBuffer();
   simcomComm.println(F("AT+HTTPINIT"));
   waitForCommandConfirmation(12000);
   simcomComm.println(F("AT+HTTPPARA=\"URL\",\"http://api.vehiclemap.xyz/route\""));
   waitForCommandConfirmation(12000);
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
-  String httpString = "{\"token\":\"" + token + "\"}";
+  String httpString = "{\"token\":\"" + readFromEEPROM(tokenAddress, tokenMaxLength) + "\"}";
   simcomComm.print(F("AT+HTTPDATA="));
   simcomComm.print(httpString.length());
   simcomComm.println(F(",10000"));
@@ -623,15 +664,17 @@ bool sendStartupMessage() {
   DEBUG_PRINT("Response from server in startup message: ");
   DEBUG_PRINT_LN(httpString);
   simcomComm.println(F("AT+HTTPTERM"));
+  waitForCommandConfirmation(12000);
   if (httpString.indexOf("+HTTPACTION: 1,200,") > -1) {
-    DEBUG_PRINT_LN(F("-----OK-----\nStartup message sent successfully.\n-----OK-----\n"));
+    DEBUG_PRINT_LN(F("--Method-Result--sendStartupMessage: Sent successfully"));
     return true;
   }
-  if (httpString.indexOf("+HTTPACTION: 1,403,") > -1) {
-    DEBUG_PRINT_LN(F("-----ERROR-----\nInvalid token detected.\n-----ERROR-----\n"));
+  if (httpString.indexOf("+HTTPACTION: 1,401,") > -1) {
+    DEBUG_PRINT_LN(F("--Method-Result--sendStartupMessage: Invalid token"));
+    refreshToken();
     return false;
   }
-  DEBUG_PRINT_LN(F("-----ERROR-----\nStartup message was NOT sent.\n-----ERROR-----\n"));
+  DEBUG_PRINT_LN(F("--Method-Result--sendStartupMessage: Was NOT sent"));
   return false;
 }
 
@@ -667,7 +710,7 @@ void getLocation() {
   locationAcquired = false;
   locationDeviation = false;
   digitalWrite(ledPin, HIGH);
-  DEBUG_PRINT_LN(F("\nGetting location..."));
+  DEBUG_PRINT_LN(F("--Method-Start--getLocation"));
   clearBuffer();
   simcomComm.println(F("AT+CGNSSINFO"));
   waitForCommandConfirmation(9000);
@@ -717,7 +760,7 @@ void getLocation() {
     gpsResponse = "";
     digitalWrite(ledPin, LOW);
     if (lat.length() < 4 || lon.length() < 4) {
-      DEBUG_PRINT_LN(F("-----ERROR-----\nFailed to get location.\n-----ERROR-----\n"));
+      DEBUG_PRINT_LN(F("--Method-Result--getLocation: Failed to get location"));
       return;
     }
     locationAcquired = true;
@@ -727,7 +770,7 @@ void getLocation() {
     float savedLon = readFromEEPROM(lonAddress, 12).toFloat();
     if (calculateDistance(currentLat, currentLon, savedLat, savedLon) <
         minimalDistanceDelta) {
-      DEBUG_PRINT_LN(F("-----WARNING-----\nLocation is the same as the last one. Skipping...\n-----WARNING-----\n"));
+      DEBUG_PRINT_LN(F("--Method-Result--getLocation: Location is the same as the last one"));
       return;
     }
     locationDeviation = true;
@@ -762,7 +805,7 @@ void getLocation() {
  */
 bool sendLocation() {
   digitalWrite(ledPin, HIGH);
-  DEBUG_PRINT_LN(F("\nSending location to server..."));
+  DEBUG_PRINT_LN(F("--Method-Start--sendLocation"));
   clearBuffer();
   simcomComm.println(F("AT+HTTPINIT"));
   waitForCommandConfirmation(12000);
@@ -771,7 +814,7 @@ bool sendLocation() {
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
   String communicationString;
-  communicationString = "{\"token\":\"" + token +
+  communicationString = "{\"token\":\"" + readFromEEPROM(tokenAddress, 32) +
                         "\",\"lat\":\"" + readFromEEPROM(latAddress, 12) +
                         "\",\"lon\":\"" + readFromEEPROM(lonAddress, 12) +
                         "\",\"speed\":\"" + readFromEEPROM(speedAddress, 6) + "\"}";
@@ -793,20 +836,21 @@ bool sendLocation() {
     communicationString += (char)simcomComm.read();
   }
   simcomComm.println(F("AT+HTTPTERM"));
+  waitForCommandConfirmation(12000);
   digitalWrite(ledPin, LOW);
   DETAILED_DEBUG_PRINT(F("Response from server in send location: "));
   DETAILED_DEBUG_PRINT_LN(communicationString);
   if (communicationString.indexOf("+HTTPACTION: 1,200,") > -1 ||
       communicationString.indexOf("+HTTPACTION: 1,403,") > -1) {
-    DEBUG_PRINT_LN(F("-----OK-----\nLocation sent successfully.\n-----OK-----\n"));
+    DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Location sent successfully"));
     return true;
   }
   if (communicationString.indexOf("+HTTPACTION: 1,401,") > -1) {
-    DEBUG_PRINT_LN(F("-----ERROR-----\nLocation was NOT sent. Invalid token.\n-----ERROR-----\n"));
+    DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Location was NOT sent. Invalid token"));
     refreshToken();
     return false;
   }
-  DEBUG_PRINT_LN(F("-----ERROR-----\nLocation was NOT sent.\n-----ERROR-----\n"));
+  DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Location was NOT sent"));
   return false;
 }
 
@@ -824,7 +868,7 @@ bool sendLocation() {
  * @param length The maximum length of the string to save.
  */
 void saveToEEPROM(String data, uint8_t address, uint8_t length) {
-  DETAILED_DEBUG_PRINT(F("Saving to EEPROM: "));
+  DETAILED_DEBUG_PRINT(F("--Method-Start--saveToEEPROM: Data: "));
   DETAILED_DEBUG_PRINT_LN(data);
   for (uint8_t i = 0; i < length; ++i) {
     if (i < data.length()) {
@@ -852,7 +896,7 @@ String readFromEEPROM(uint8_t address, uint8_t length) {
     if (c == '\0') break;
     token += c;
   }
-  DETAILED_DEBUG_PRINT(F("Read from EEPROM: "));
+  DETAILED_DEBUG_PRINT(F("--Method-Result--readFromEEPROM: "));
   DETAILED_DEBUG_PRINT_LN(token);
   return token;
 }
@@ -881,6 +925,7 @@ void wait(int seconds) {
  * to ensure it is empty before sending new commands.
  */
 void clearBuffer() {
+  delay(10);
   while (simcomComm.available()) {
     simcomComm.read();
   }
@@ -894,7 +939,7 @@ void clearBuffer() {
  */
 void waitForModemToInitialize() {
   clearBuffer();
-  DEBUG_PRINT_LN(F("\nWaiting for modem to initialize..."));
+  DEBUG_PRINT_LN(F("\n--Method-Start--waitForModemToInitialize"));
   unsigned long startTime = millis();
   const unsigned long timeout = 30000;
   while (millis() - startTime < timeout) {
@@ -916,7 +961,7 @@ void waitForModemToInitialize() {
     delay(100);
     DETAILED_DEBUG_PRINT(F("Not ready... "));
   }
-  DEBUG_PRINT_LN(F("\nModem initialization failed!"));
+  DEBUG_PRINT_LN(F("\n--Method-Result--waitForModemToInitialize: initialization failed"));
 }
 
 /**
@@ -929,7 +974,8 @@ void waitForModemToInitialize() {
  * @return true if "OK" or "CGNSS" is received, false if "ERROR" is received or timeout occurs.
  */
 bool waitForCommandConfirmation(int maxWaitTime) {
-  DEBUG_PRINT(F("\nWaiting for OK..."));
+  delay(2);
+  DEBUG_PRINT(F("\n--Method-Start--waitForCommandConfirmation"));
   unsigned long startTime = millis();
   int attempts = 0;
   while (millis() - startTime < maxWaitTime) {
@@ -959,7 +1005,7 @@ bool waitForCommandConfirmation(int maxWaitTime) {
     delay(5);
     ++attempts;
   }
-  DEBUG_PRINT_LN(F("Reached maximum wait time!"));
+  DEBUG_PRINT_LN(F("--Method-Result--waitForCommandConfirmation: Reached maximum wait time"));
   return false;
 }
 
