@@ -4,7 +4,7 @@
 
 #define BAUD_RATE 38400 // Baud rate for SiMCOM communication and PC debugging communication
 
-#define APN "internet" // APN for the SIMCOM module
+const char APN[] = "internet"; // APN for the SIMCOM module
 
 #define DEBUGGING_LEVEL 2
 
@@ -165,7 +165,7 @@ void readIMEI() {
   DEBUG_PRINT_LN(F("--Method-Start--readIMEI"));
   clearBuffer();
   int attempts = 0;
-  String response = "";
+  char response[32] = {0};
   while (attempts < 5) {
     simcomComm.println(F("AT+CGSN"));
     unsigned long startTime = millis();
@@ -174,24 +174,29 @@ void readIMEI() {
         break;
       }
     }
-    while (simcomComm.available()) {
-      response += char(simcomComm.read());
+    uint8_t idx = 0;
+    while (simcomComm.available() && idx < sizeof(response) - 1) {
+      char c = simcomComm.read();
+      if (isPrintable(c)) {
+        response[idx++] = c;
+      }
     }
+    response[idx] = '\0';
     DEBUG_PRINT(F("--Method-Result--readIMEI\nResponse: "));
     DEBUG_PRINT_LN(response);
-    response = extractIMEI(response);
-    if (response.length() >= 15) {
+    extractIMEI(response);
+    if (strlen(response) == 15) {
       break;
     }
     DEBUG_PRINT_LN(F("--Method-Result--readIMEI: IMEI was not read correctly"));
     ++attempts;
   }
-  if (response.length() < 15) {
+  if (strlen(response) < 15) {
     DEBUG_PRINT_LN(F("--Method-Result--readIMEI: IMEI was not read correctly after 5 attempts"));
     return;
   }
   DEBUG_PRINT_LN(F("--Method-Result--readIMEI: IMEI was read correctly"));
-  saveToEEPROM(response, imeiAddress, 15);
+  saveToEEPROM(String(response), imeiAddress, 15);
 }
 
 /**
@@ -210,21 +215,17 @@ void readIMEI() {
  *       IMEI is included, and it removes this prefix before processing.
  * @warning Function stops processing the response if it encounters a non-digit character.
  */
-String extractIMEI(String response) {
-  response.trim();
-  if (response.startsWith("AT+CGSN")) {
-    response.remove(0, 7);
-    response.trim();
-  }
-  for (uint8_t i = 0; i < response.length(); ++i) {
-    if (!isdigit(response.charAt(i))) {
-      response.remove(i, response.length() - i);
-      break;
+void extractIMEI(char* response) {
+  uint8_t i = 0, j = 0;
+  while (response[i] != '\0') {
+    if (isdigit(response[i])) {
+      response[j++] = response[i];
     }
+    ++i;
   }
+  response[j] = '\0';
   DEBUG_PRINT(F("--Method-Result--extractIMEI\nResponse: "));
   DEBUG_PRINT_LN(response);
-  return response;
 }
 
 /**
@@ -295,12 +296,20 @@ bool isConnected() {
   DEBUG_PRINT_LN(F("--Method-Start--isConnected"));
   clearBuffer();
   simcomComm.println(F("AT+CREG?"));
-  String response = "";
-  while (simcomComm.available()) {
-    response += (char)simcomComm.read();
+  char response[32] = {0};
+  uint8_t idx = 0;
+  unsigned long start = millis();
+  while (millis() - start < 9000 && idx < sizeof(response) - 1) {
+    if (simcomComm.available()) {
+      char c = simcomComm.read();
+      if (isPrintable(c)) {
+        response[idx++] = c;
+      }
+    }
   }
-  if (response.indexOf(F("+CREG: 0,1")) > -1 ||
-      response.indexOf(F("+CREG: 0,5")) > -1) {
+  response[idx] = '\0';
+  if (strstr(response, "+CREG: 0,1") != NULL ||
+      strstr(response, "+CREG: 0,5") != NULL) {
         DEBUG_PRINT_LN(F("--Method-Result--isConnected: Connected"));
         return true;
   }
@@ -401,94 +410,90 @@ bool requestNewToken() {
   waitForCommandConfirmation(12000);
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
-  String imei = readFromEEPROM(imeiAddress, 15);
-  if (imei.length() < 15) {
+  char imei[16] = {0};
+  strncpy(imei, readFromEEPROM(imeiAddress, 15).c_str(), sizeof(imei) - 1);
+  if (strlen(imei) < 15) {
     DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: IMEI was not read correctly"));
     readIMEI();
-    imei = readFromEEPROM(imeiAddress, 15);
-    if (imei.length() < 15) {
+    strncpy(imei, readFromEEPROM(imeiAddress, 15).c_str(), sizeof(imei) - 1);
+    if (strlen(imei) < 15) {
       DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: IMEI was not read correctly after 5 attempts"));
       return false;
     }
   }
-  String httpString = "{\"imei\":\"" + imei + "\"}";
+  char httpField[192] = {0};
+  snprintf(httpField, sizeof(httpField), "{\"imei\":\"%s\"}", imei);
   simcomComm.print(F("AT+HTTPDATA="));
-  simcomComm.print(httpString.length());
+  simcomComm.print(strlen(httpField));
   simcomComm.println(F(",10000"));
   delay(50);
-  simcomComm.println(httpString);
+  simcomComm.println(httpField);
   delay(50);
   clearBuffer();
   DETAILED_DEBUG_PRINT(F("Sending request to server: "));
-  DETAILED_DEBUG_PRINT_LN(httpString);
+  DETAILED_DEBUG_PRINT_LN(httpField);
   simcomComm.println(F("AT+HTTPACTION=1"));
   waitForCommandConfirmation(12000);
-  httpString = "";
+  memset(httpField, 0, sizeof(httpField));
   delay(500);
-  while (simcomComm.available()) {
-    httpString += (char)simcomComm.read();
-  }
+  readResponse(httpField, sizeof(httpField));
   DEBUG_PRINT(F("Response from server in request token: "));
-  DEBUG_PRINT_LN(httpString);
-  if (httpString.indexOf(F("+HTTPACTION: ")) != -1) {
-    if (httpString.indexOf(F("+HTTPACTION: 1,200,")) > -1) {
-      String responseLength;
-      for (uint8_t i = httpString.lastIndexOf(F(",")) + 1; i < httpString.length(); ++i) {
-        responseLength += httpString[i];
-      }
-      clearBuffer();
-      DETAILED_DEBUG_PRINT(F("Response length: "));
-      DETAILED_DEBUG_PRINT_LN(responseLength);
-      httpString = "";
-      DETAILED_DEBUG_PRINT(F("Reading response..."));
-      simcomComm.print(F("AT+HTTPREAD="));
-      simcomComm.println(responseLength);
-      delay(250);
-      while (simcomComm.available()) {
-        httpString += (char)simcomComm.read();
-      }
-      DEBUG_PRINT(F("Response: "));
-      DEBUG_PRINT_LN(httpString);
-      simcomComm.println(F("AT+HTTPTERM"));
-      waitForCommandConfirmation(12000);
-      if (httpString.indexOf(F("{")) != -1) {
-        httpString.remove(0, httpString.indexOf(F("{")) - 1);
-        String token = parseJSON(httpString, "token");
-        DEBUG_PRINT(F("New token: "));
-        DEBUG_PRINT_LN(token);
-        if (token.length() > 0) {
-          saveToEEPROM(token, tokenAddress, tokenMaxLength);
-          int value = parseJSON(httpString, "position_check_freq").toInt();
-          if (value >= 0) {
-            positionInterval = (value > 255) ? 255 : value;
-          }
-          token.remove(0, token.length());
-          value = parseJSON(httpString, "min_distance_delta").toInt();
-          if (value >= 0) {
-            minimalDistanceDelta = (value > 255) ? 255 : value;
-          }
-          token = parseJSON(httpString, "manual_start");
-          if (token.startsWith("true")) {
-            startupSendEnabled = true;
-          } else {
-            startupSendEnabled = false;
-          }
-          DEBUG_PRINT(F("Minimal move distance: "));
-          DEBUG_PRINT_LN(String(minimalDistanceDelta));
-          DEBUG_PRINT(F("Position Interval: "));
-          DEBUG_PRINT_LN(String(positionInterval));
-          DEBUG_PRINT(F("Manual startup: "));
-          DEBUG_PRINT_LN(token);
-          DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Token retrieved successfully"));
-          return true;
-        }
-      }
+  DEBUG_PRINT_LN(httpField);
+  char *tokenStart = strstr(httpField, "+HTTPACTION: 1,200,");
+  if (tokenStart != NULL) {
+    char responseLength[4] = {0};
+    char *lastComma = strrchr(tokenStart, ',');
+    if (lastComma != NULL) {
+      strncpy(responseLength, lastComma + 1, sizeof(responseLength) - 1);
     }
-    if (httpString.indexOf(F("+HTTPACTION: 1,400,")) > -1) {
-      DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Invalid IMEI"));
-      readIMEI();
+    clearBuffer();
+    DETAILED_DEBUG_PRINT(F("Response length: "));
+    DETAILED_DEBUG_PRINT_LN(responseLength);
+    memset(httpField, 0, sizeof(httpField));
+    DETAILED_DEBUG_PRINT(F("Reading response..."));
+    simcomComm.print(F("AT+HTTPREAD="));
+    simcomComm.println(responseLength);
+    delay(250);
+    readResponse(httpField, sizeof(httpField));
+    DEBUG_PRINT(F("Response: "));
+    DEBUG_PRINT_LN(httpField);
+    char token[33] = {0};
+    char freq[4] = {0};
+    char delta[4] = {0};
+    char manual[6] = {0};
+    simcomComm.println(F("AT+HTTPTERM"));
+    waitForCommandConfirmation(12000);
+    if (parseJSON(httpField, "token", token, sizeof(token))) {
+      saveToEEPROM(token, tokenAddress, tokenMaxLength);
+    } else {
+      DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Failed to parse token"));
       return false;
     }
+    if (parseJSON(httpField, "position_check_freq", freq, sizeof(freq))) {
+      int value = atoi(freq);
+      positionInterval = (value > 255) ? 255 : value;
+    }
+    if (parseJSON(httpField, "min_distance_delta", delta, sizeof(delta))) {
+      int value = atoi(delta);
+      minimalDistanceDelta = (value > 255) ? 255 : value;
+    }
+    if (parseJSON(httpField, "manual_start", manual, sizeof(manual))) {
+      startupSendEnabled = (strncmp(manual, "tru", 3) == 0);
+    }
+    DEBUG_PRINT(F("Minimal move distance: "));
+    DEBUG_PRINT_LN(minimalDistanceDelta);
+    DEBUG_PRINT(F("Position Interval: "));
+    DEBUG_PRINT_LN(positionInterval);
+    DEBUG_PRINT(F("Manual startup: "));
+    DEBUG_PRINT_LN(startupSendEnabled ? F("true") : F("false"));
+    DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Token retrieved successfully"));
+    return true;
+  } else if (strstr(httpField, "+HTTPACTION: 1,400,") != NULL) {
+    simcomComm.println(F("AT+HTTPTERM"));
+    waitForCommandConfirmation(12000);
+    DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Invalid IMEI"));
+    readIMEI();
+    return false;
   }
   simcomComm.println(F("AT+HTTPTERM"));
   waitForCommandConfirmation(12000);
@@ -531,32 +536,31 @@ bool verifyToken() {
   waitForCommandConfirmation(12000);
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
-  String httpString = "{\"token\":\"" + readFromEEPROM(tokenAddress, tokenMaxLength) + "\", \"imei\":\"" + readFromEEPROM(imeiAddress, 15) + "\"}";
+  char httpBuffer[80] = {0};
+  snprintf(httpBuffer, sizeof(httpBuffer), "{\"token\":\"%s\", \"imei\":\"%s\"}", 
+           readFromEEPROM(tokenAddress, tokenMaxLength).c_str(), 
+           readFromEEPROM(imeiAddress, 15).c_str());
   simcomComm.print(F("AT+HTTPDATA="));
-  simcomComm.print(httpString.length());
+  simcomComm.print(strlen(httpBuffer));
   simcomComm.println(F(",10000"));
   delay(50);
-  simcomComm.println(httpString);
+  simcomComm.println(httpBuffer);
   delay(50);
   clearBuffer();
   DETAILED_DEBUG_PRINT(F("Sending request to server: "));
-  DETAILED_DEBUG_PRINT_LN(httpString);
+  DETAILED_DEBUG_PRINT_LN(httpBuffer);
   simcomComm.println(F("AT+HTTPACTION=1"));
   waitForCommandConfirmation(12000);
-  httpString = "";
+  memset(httpBuffer, 0, sizeof(httpBuffer));
   delay(500);
-  while (simcomComm.available()) {
-    httpString += (char)simcomComm.read();
-  }
+  readResponse(httpBuffer, sizeof(httpBuffer));
   DEBUG_PRINT(F("Response from server in verify token: "));
-  DEBUG_PRINT_LN(httpString);
+  DEBUG_PRINT_LN(httpBuffer);
   simcomComm.println(F("AT+HTTPTERM"));
   waitForCommandConfirmation(12000);
-  if (httpString.indexOf(F("+HTTPACTION: ")) != -1) {
-    if (httpString.indexOf(F("+HTTPACTION: 1,200,")) > -1) {
-      DEBUG_PRINT_LN(F("---Method-Result--verifyToken: Was verified"));
-      return true;
-    }
+  if (strstr(httpBuffer, "+HTTPACTION: 1,200,") != NULL) {
+    DEBUG_PRINT_LN(F("---Method-Result--verifyToken: Was verified"));
+    return true;
   }
   DEBUG_PRINT_LN(F("--Method-Result--verifyToken: Was NOT verified"));
   return false;
@@ -569,7 +573,7 @@ bool verifyToken() {
  * the value corresponding to the key. The value can be either a string (enclosed
  * in double quotes) or a non-string value (e.g., a number or boolean).
  * 
- * @param jsonString The JSON string to parse. It should be properly formatted.
+ * @param json The JSON string to parse. It should be properly formatted.
  * @param key The key whose associated value needs to be extracted.
  * @return A String containing the value associated with the key, or an empty
  *         string if the key is not found or parsing fails.
@@ -582,36 +586,30 @@ bool verifyToken() {
  * String value = parseJSON(json, "temperature"); // Returns "25"
  * String status = parseJSON(json, "status");     // Returns "ok"
  */
-String parseJSON(String jsonString, String key) {
+bool parseJSON(const char* json, const char* key, char* outputBuffer, size_t bufferLen) {
   DETAILED_DEBUG_PRINT(F("--Method-Start--parseJSON\nString: "));
-  DETAILED_DEBUG_PRINT_LN(jsonString);
+  DETAILED_DEBUG_PRINT_LN(json);
   DETAILED_DEBUG_PRINT(F("Key: "));
   DETAILED_DEBUG_PRINT_LN(key);
-  jsonString.trim();
-  key += "\":";
-  int startIndex = jsonString.indexOf(key);
-  if (startIndex > -1) {
-    startIndex += key.length();
-    char firstChar = jsonString[startIndex];
-    int endIndex;
-    if (firstChar == '"') {
-      ++startIndex;
-      endIndex = jsonString.indexOf(F("\""), startIndex);
-    } else {
-      endIndex = jsonString.indexOf(F(","), startIndex);
-      if (endIndex == -1) {
-        endIndex = jsonString.indexOf(F("}"), startIndex);
-      }
-    }
-    if (endIndex > startIndex) {
-      DETAILED_DEBUG_PRINT(F("--Method-Result--parseJSON: "));
-      DETAILED_DEBUG_PRINT_LN(jsonString.substring(startIndex, endIndex));
-      return jsonString.substring(startIndex, endIndex);
-    }
+  char searchKey[24] = {0};
+  snprintf(searchKey, sizeof(searchKey), "\"%s\":", key);
+  const char* keyPos = strstr(json, searchKey);
+  if (!keyPos) {
+    DETAILED_DEBUG_PRINT(F("--Method-Result--parseJSON: cannot find key: "));
+    DETAILED_DEBUG_PRINT_LN(key);
+    return false;
   }
-  DETAILED_DEBUG_PRINT(F("--Method-Result--parseJSON: cannot find key: "));
-  DETAILED_DEBUG_PRINT_LN(key);
-  return "";
+  const char* valueStart = keyPos + strlen(searchKey);
+  while (*valueStart == ' ' || *valueStart == '\"') ++valueStart;
+  const char* valueEnd = valueStart;
+  while (*valueEnd && *valueEnd != ',' && *valueEnd != '}' && *valueEnd != '\"') ++valueEnd;
+  size_t valueLen = valueEnd - valueStart;
+  if (valueLen >= bufferLen) valueLen = bufferLen - 1;
+  strncpy(outputBuffer, valueStart, valueLen);
+  outputBuffer[valueLen] = '\0';
+  DETAILED_DEBUG_PRINT(F("--Method-Result--parseJSON: "));
+  DETAILED_DEBUG_PRINT_LN(outputBuffer);
+  return true;
 }
 
 // Receiving coords and sending data to server -----------------------
@@ -640,30 +638,29 @@ bool sendStartupMessage() {
   waitForCommandConfirmation(12000);
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
-  String httpString = "{\"token\":\"" + readFromEEPROM(tokenAddress, tokenMaxLength) + "\"}";
+  char httpBuffer[64] = {0};
+  snprintf(httpBuffer, sizeof(httpBuffer), "{\"token\":\"%s\"}", readFromEEPROM(tokenAddress, tokenMaxLength).c_str());
   simcomComm.print(F("AT+HTTPDATA="));
-  simcomComm.print(httpString.length());
+  simcomComm.print(strlen(httpBuffer));
   simcomComm.println(F(",10000"));
   delay(50);
-  simcomComm.println(httpString);
+  simcomComm.println(httpBuffer);
   delay(50);
   clearBuffer();
   simcomComm.println(F("AT+HTTPACTION=1"));
   waitForCommandConfirmation(12000);
-  httpString = "";
+  memset(httpBuffer, 0, sizeof(httpBuffer));
   delay(500);
-  while (simcomComm.available()) {
-    httpString += (char)simcomComm.read();
-  }
+  readResponse(httpBuffer, sizeof(httpBuffer));
   DEBUG_PRINT(F("Response from server in startup message: "));
-  DEBUG_PRINT_LN(httpString);
+  DEBUG_PRINT_LN(httpBuffer);
   simcomComm.println(F("AT+HTTPTERM"));
   waitForCommandConfirmation(12000);
-  if (httpString.indexOf(F("+HTTPACTION: 1,200,")) > -1) {
+  if (strstr(httpBuffer, "+HTTPACTION: 1,200,") != NULL) {
     DEBUG_PRINT_LN(F("--Method-Result--sendStartupMessage: Sent successfully"));
     return true;
   }
-  if (httpString.indexOf(F("+HTTPACTION: 1,401,")) > -1) {
+  if (strstr(httpBuffer, "+HTTPACTION: 1,401,") != NULL) {
     DEBUG_PRINT_LN(F("--Method-Result--sendStartupMessage: Invalid token"));
     refreshToken();
     return false;
@@ -897,6 +894,17 @@ String readFromEEPROM(uint8_t address, uint8_t length) {
 
 // Others ---------------------------------------
 
+void readResponse(char* buffer, size_t maxLen) {
+  uint8_t idx = 0;
+  while (simcomComm.available() && idx < maxLen - 1) {
+    char c = simcomComm.read();
+    if (isPrintable(c)) {
+      buffer[idx++] = c;
+    }
+  }
+  buffer[idx] = '\0';
+}
+
 /**
  * @brief Waits for a specified number of seconds, blinking the LED.
  * 
@@ -939,14 +947,21 @@ void waitForModemToInitialize() {
   while (millis() - startTime < timeout) {
     simcomComm.println(F("AT"));
     delay(100);
+    unsigned long respStart = millis();
+    while (!simcomComm.available() && millis() - respStart < 1000);
     if (simcomComm.available()) {
-      String response = "";
-      while (simcomComm.available()) {
-        response += char(simcomComm.read());
+      char response[64] = {0};
+      uint8_t idx = 0;
+      while (simcomComm.available() && idx < sizeof(response) - 1) {
+        char c = simcomComm.read();
+        if (isPrintable(c)) {
+          response[idx++] = c;
+          response[idx] = '\0';
+        }
       }
       DETAILED_DEBUG_PRINT(F("Response: "));
       DETAILED_DEBUG_PRINT_LN(response);
-      if (response.indexOf(F("OK")) != -1) {
+      if (strstr(response, "OK") != NULL) {
         clearBuffer();
         DEBUG_PRINT_LN(F("Modem Initialized!"));
         return;
@@ -954,6 +969,7 @@ void waitForModemToInitialize() {
     }
     delay(100);
     DETAILED_DEBUG_PRINT(F("Not ready... "));
+    clearBuffer();
   }
   DEBUG_PRINT_LN(F("--Method-Result--waitForModemToInitialize: initialization failed"));
 }
@@ -993,27 +1009,33 @@ void checkBaudRate() {
   simcomComm.begin(115200);
   delay(250);
   int attempts = 0;
-  String response;
+  char response[64];
   do {
+    memset(response, 0, sizeof(response));
+    delay(100);
     DETAILED_DEBUG_PRINT_LN(F("Changing baud rate"));
     simcomComm.println(("AT+IPR=") + String(BAUD_RATE));
     delay(10);
-    response = "";
-    while (simcomComm.available()) {
-      response += char(simcomComm.read());
+    uint8_t idx = 0;
+    while (simcomComm.available() && idx < sizeof(response) - 1) {
+      char c = simcomComm.read();
+      if (isPrintable(c)) {
+        response[idx++] = c;
+        response[idx] = '\0';
+      }
     }
     delay(250);
     DETAILED_DEBUG_PRINT(F("Response: "));
     DETAILED_DEBUG_PRINT_LN(response);
-    if (attempts > 10) {
-      if (response.length() > 0 && (response[0] < 'A' || response[0] > 'z')) {
+    if (attempts > 20) {
+      if (idx > 0 && (response[0] < 'A' || response[0] > 'z')) {
         DEBUG_PRINT(F("Unknown character received in response: "));
         DEBUG_PRINT_LN(response);
         break;
       }
     }
     ++attempts;
-  } while (!(response.indexOf(F("OK")) != -1 || response.indexOf(F("K")) != -1));
+  } while (!(strstr(response, "OK") != NULL || strstr(response, "K") != NULL) && attempts < 30);
   simcomComm.end();
   delay(250);
   simcomComm.begin(BAUD_RATE);
@@ -1038,33 +1060,29 @@ bool waitForCommandConfirmation(int maxWaitTime) {
   delay(2);
   DEBUG_PRINT_LN(F("--Method-Start--waitForCommandConfirmation"));
   unsigned long startTime = millis();
-  int attempts = 0;
+  char response[64] = {0};
   while (millis() - startTime < maxWaitTime) {
     if (simcomComm.available()) {
-      String response = "";
-      while (simcomComm.available()) {
-        response += char(simcomComm.read());
-        if (response.indexOf(F("OK")) != -1) {
-          DETAILED_DEBUG_PRINT(F("Response: "));
-          DETAILED_DEBUG_PRINT_LN(response);
-          return true;
-        }
-        if (response.indexOf(F("CGNSS")) != -1) {
-          DETAILED_DEBUG_PRINT(F("Response: "));
-          DETAILED_DEBUG_PRINT_LN(response);
-          return true;
-        }
-        if (response.indexOf(F("ERROR")) != -1) {
-          DETAILED_DEBUG_PRINT(F("Response: "));
-          DETAILED_DEBUG_PRINT_LN(response);
-          return false;
+      uint8_t idx = 0;
+      while (simcomComm.available() && idx < sizeof(response) - 1) {
+        char c = simcomComm.read();
+        if (isPrintable(c)) {
+          response[idx++] = c;
+          response[idx] = '\0';
+          if (strstr(response, "OK") != NULL || strstr(response, "CGNSS") != NULL) {
+            DETAILED_DEBUG_PRINT(F("Response: "));
+            DETAILED_DEBUG_PRINT_LN(response);
+            return true;
+          }
+          if (strstr(response, "ERROR") != NULL) {
+            DETAILED_DEBUG_PRINT(F("Response: "));
+            DETAILED_DEBUG_PRINT_LN(response);
+            return false;
+          }
         }
       }
-      DETAILED_DEBUG_PRINT(F("Response: "));
-      DETAILED_DEBUG_PRINT_LN(response);
     }
     delay(5);
-    ++attempts;
   }
   DEBUG_PRINT_LN(F("--Method-Result--waitForCommandConfirmation: Reached maximum wait time"));
   return false;
