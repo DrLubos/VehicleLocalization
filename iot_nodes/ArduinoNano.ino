@@ -164,7 +164,7 @@ void loop() {
 void readIMEI() {
   DEBUG_PRINT_LN(F("--Method-Start--readIMEI"));
   clearBuffer();
-  int attempts = 0;
+  uint8_t attempts = 0;
   char response[32] = {0};
   while (attempts < 5) {
     simcomComm.println(F("AT+CGSN"));
@@ -196,7 +196,7 @@ void readIMEI() {
     return;
   }
   DEBUG_PRINT_LN(F("--Method-Result--readIMEI: IMEI was read correctly"));
-  saveToEEPROM(String(response), imeiAddress, 15);
+  saveToEEPROM(response, imeiAddress, 15);
 }
 
 /**
@@ -247,7 +247,9 @@ void connectToNetwork() {
   simcomComm.println(F("AT+CGATT=1"));
   waitForCommandConfirmation(9000);
   DETAILED_DEBUG_PRINT_LN(F("Setting APN..."));
-  simcomComm.println(String("AT+CGDCONT=1,\"IP\",\"") + APN + "\"");
+  char apnCommand[64] = {0};
+  snprintf(apnCommand, sizeof(apnCommand), "AT+CGDCONT=1,\"IP\",\"%s\"", APN);
+  simcomComm.println(apnCommand);
   waitForCommandConfirmation(9000);
   DETAILED_DEBUG_PRINT_LN(F("Setting PDP context..."));
   simcomComm.println(F("AT+CGACT=1,1"));
@@ -411,11 +413,11 @@ bool requestNewToken() {
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
   char imei[16] = {0};
-  strncpy(imei, readFromEEPROM(imeiAddress, 15).c_str(), sizeof(imei) - 1);
+  readFromEEPROM(imeiAddress, 15, imei, sizeof(imei));
   if (strlen(imei) < 15) {
     DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: IMEI was not read correctly"));
     readIMEI();
-    strncpy(imei, readFromEEPROM(imeiAddress, 15).c_str(), sizeof(imei) - 1);
+    readFromEEPROM(imeiAddress, 15, imei, sizeof(imei));
     if (strlen(imei) < 15) {
       DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: IMEI was not read correctly after 5 attempts"));
       return false;
@@ -439,10 +441,10 @@ bool requestNewToken() {
   readResponse(httpField, sizeof(httpField));
   DEBUG_PRINT(F("Response from server in request token: "));
   DEBUG_PRINT_LN(httpField);
-  char *tokenStart = strstr(httpField, "+HTTPACTION: 1,200,");
+  char* tokenStart = strstr(httpField, "+HTTPACTION: 1,200,");
   if (tokenStart != NULL) {
     char responseLength[4] = {0};
-    char *lastComma = strrchr(tokenStart, ',');
+    char* lastComma = strrchr(tokenStart, ',');
     if (lastComma != NULL) {
       strncpy(responseLength, lastComma + 1, sizeof(responseLength) - 1);
     }
@@ -537,9 +539,11 @@ bool verifyToken() {
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
   char httpBuffer[80] = {0};
-  snprintf(httpBuffer, sizeof(httpBuffer), "{\"token\":\"%s\", \"imei\":\"%s\"}", 
-           readFromEEPROM(tokenAddress, tokenMaxLength).c_str(), 
-           readFromEEPROM(imeiAddress, 15).c_str());
+  char token[33] = {0};
+  char imei[16] = {0};
+  readFromEEPROM(tokenAddress, tokenMaxLength, token, sizeof(token));
+  readFromEEPROM(imeiAddress, 15, imei, sizeof(imei));
+  snprintf(httpBuffer, sizeof(httpBuffer), "{\"token\":\"%s\",\"imei\":\"%s\"}", token, imei);
   simcomComm.print(F("AT+HTTPDATA="));
   simcomComm.print(strlen(httpBuffer));
   simcomComm.println(F(",10000"));
@@ -639,7 +643,9 @@ bool sendStartupMessage() {
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
   char httpBuffer[64] = {0};
-  snprintf(httpBuffer, sizeof(httpBuffer), "{\"token\":\"%s\"}", readFromEEPROM(tokenAddress, tokenMaxLength).c_str());
+  char token[33] = {0};
+  readFromEEPROM(tokenAddress, tokenMaxLength, token, sizeof(token));
+  snprintf(httpBuffer, sizeof(httpBuffer), "{\"token\":\"%s\"}", token);
   simcomComm.print(F("AT+HTTPDATA="));
   simcomComm.print(strlen(httpBuffer));
   simcomComm.println(F(",10000"));
@@ -706,68 +712,82 @@ void getLocation() {
   simcomComm.println(F("AT+CGNSSINFO"));
   waitForCommandConfirmation(9000);
   delay(100);
-  String gpsResponse = "";
-  while (simcomComm.available()) {
-    gpsResponse += (char)simcomComm.read();
-  }
+  char gpsResponse[128] = {0};
+  readResponse(gpsResponse, sizeof(gpsResponse));
   DETAILED_DEBUG_PRINT(F("Response from GPS: "));
   DETAILED_DEBUG_PRINT_LN(gpsResponse);
-  int startIndex = gpsResponse.indexOf(F("+CGNSSINFO: "));
-  if (startIndex != -1) {
-    String lat = "";
-    String lon = "";
-    String speed = "";
-    gpsResponse = gpsResponse.substring(startIndex + 12);
-    int startIdx = 0;
-    int endIdx;
-    int fieldIndex = 0;
-    while ((endIdx = gpsResponse.indexOf(',', startIdx)) != -1) {
-      String field = gpsResponse.substring(startIdx, endIdx);
-      startIdx = endIdx + 1;
-      switch (fieldIndex) {
+  char* startPtr = strstr(gpsResponse, "+CGNSSINFO: ");
+  if (startPtr != NULL) {
+    uint8_t fieldIdx = 0;
+    startPtr += strlen("+CGNSSINFO: ");
+    if (strlen(startPtr) < 30) {
+      DEBUG_PRINT_LN(F("--Method-Result--getLocation: GNSS response too short or empty"));
+      return;
+    }
+    char* latPtr = NULL;
+    char* lonPtr = NULL;
+    char* speedPtr = NULL;
+    while (*startPtr != '\0') {
+      char* next = strchr(startPtr, ',');
+      switch (fieldIdx) {
         case 5:
-          lat = (field.length() == 0) ? "" : field;
+          latPtr = startPtr;
           break;
         case 6:
-          if (field.length() > 0 && field[0] == 'S') {
-            lat = "-" + lat;
+          if (*startPtr == 'S') {
+            --latPtr;
+            *latPtr = '-';
           }
           break;
         case 7:
-          lon = (field.length() == 0) ? "" : field;
+          lonPtr = startPtr;
           break;
         case 8:
-          if (field.length() > 0 && field[0] == 'W') {
-            lon = "-" + lon;
+          if(*startPtr == 'W') {
+            --lonPtr;
+            *lonPtr = '-';
           }
           break;
         case 12:
-          speed = (field.length() == 0) ? "" : field;
+          speedPtr = startPtr;
           break;
       }
-      ++fieldIndex;
+      if (next == NULL) {
+        break;
+      }
+      startPtr = next + 1;
+      ++fieldIdx;
     }
-    gpsResponse.remove(0, gpsResponse.length());
-    gpsResponse = "";
     digitalWrite(ledPin, LOW);
-    if (lat.length() < 4 || lon.length() < 4) {
+    locationAcquired = true;
+    if (latPtr == NULL || lonPtr == NULL) {
       DEBUG_PRINT_LN(F("--Method-Result--getLocation: Failed to get location"));
       return;
     }
-    locationAcquired = true;
-    float currentLat = lat.toFloat();
-    float currentLon = lon.toFloat();
-    float savedLat = readFromEEPROM(latAddress, 12).toFloat();
-    float savedLon = readFromEEPROM(lonAddress, 12).toFloat();
-    if (calculateDistance(currentLat, currentLon, savedLat, savedLon) <
-        minimalDistanceDelta) {
+    char* endPtr = strchr(latPtr, ',');
+    if (endPtr != NULL) {
+      *endPtr = '\0';
+    }
+    endPtr = strchr(lonPtr, ',');
+    if (endPtr != NULL) {
+      *endPtr = '\0';
+    }
+    char savedLatBuffer[13] = {0};
+    char savedLonBuffer[13] = {0};
+    readFromEEPROM(latAddress, 12, savedLatBuffer, sizeof(savedLatBuffer));
+    readFromEEPROM(lonAddress, 12, savedLonBuffer, sizeof(savedLonBuffer));
+    if (calculateDistance(atof(latPtr), atof(lonPtr), atof(savedLatBuffer), atof(savedLonBuffer)) < minimalDistanceDelta) {
       DEBUG_PRINT_LN(F("--Method-Result--getLocation: Location is the same as the last one"));
       return;
     }
     locationDeviation = true;
-    saveToEEPROM(lat, latAddress, 12);
-    saveToEEPROM(lon, lonAddress, 12);
-    saveToEEPROM(speed, speedAddress, 6);
+    saveToEEPROM(latPtr, latAddress, 12);
+    saveToEEPROM(lonPtr, lonAddress, 12);
+    if (speedPtr != NULL) {
+      saveToEEPROM(speedPtr, speedAddress, 6);
+    } else {
+      saveToEEPROM("0", speedAddress, 6);
+    }
   }
 }
 
@@ -804,39 +824,46 @@ bool sendLocation() {
   waitForCommandConfirmation(12000);
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
-  String communicationString;
-  communicationString = "{\"token\":\"" + readFromEEPROM(tokenAddress, 32) +
-                        "\",\"lat\":\"" + readFromEEPROM(latAddress, 12) +
-                        "\",\"lon\":\"" + readFromEEPROM(lonAddress, 12) +
-                        "\",\"speed\":\"" + readFromEEPROM(speedAddress, 6) + "\"}";
+  char token[33] = {0};
+  char lat[13] = {0};
+  char lon[13] = {0};
+  char speed[7] = {0};
+  readFromEEPROM(tokenAddress, tokenMaxLength, token, sizeof(token));
+  readFromEEPROM(latAddress, 12, lat, sizeof(lat));
+  readFromEEPROM(lonAddress, 12, lon, sizeof(lon));
+  readFromEEPROM(speedAddress, 6, speed, sizeof(speed));
   simcomComm.print(F("AT+HTTPDATA="));
-  simcomComm.print(communicationString.length());
+  uint8_t dataLength = strlen(token) + strlen(lat) + strlen(lon) + strlen(speed) + 10 + 9 + 9 + 11 + 2;
+  simcomComm.print(dataLength);
   simcomComm.println(F(",10000"));
   delay(50);
-  simcomComm.println(communicationString);
-  delay(50);
+  simcomComm.print(F("{\"token\":\""));
+  simcomComm.print(token);
+  simcomComm.print(F("\",\"lat\":\""));
+  simcomComm.print(lat);
+  simcomComm.print(F("\",\"lon\":\""));
+  simcomComm.print(lon);
+  simcomComm.print(F("\",\"speed\":\""));
+  simcomComm.print(speed);
+  simcomComm.println(F("\"}"));
+  waitForCommandConfirmation(10000);
   clearBuffer();
-  DETAILED_DEBUG_PRINT_LN(communicationString);
-  DETAILED_DEBUG_PRINT(F("Sending data: "));
   simcomComm.println(F("AT+HTTPACTION=1"));
   waitForCommandConfirmation(12000);
-  communicationString.remove(0, communicationString.length());
-  communicationString = "";
+  char communicationBuffer[64] = {0};
   delay(500);
-  while (simcomComm.available()) {
-    communicationString += (char)simcomComm.read();
-  }
+  readResponse(communicationBuffer, sizeof(communicationBuffer));
   simcomComm.println(F("AT+HTTPTERM"));
   waitForCommandConfirmation(12000);
   digitalWrite(ledPin, LOW);
   DETAILED_DEBUG_PRINT(F("Response from server in send location: "));
-  DETAILED_DEBUG_PRINT_LN(communicationString);
-  if (communicationString.indexOf(F("+HTTPACTION: 1,200,")) > -1 ||
-      communicationString.indexOf(F("+HTTPACTION: 1,403,")) > -1) {
+  DETAILED_DEBUG_PRINT_LN(communicationBuffer);
+  if (strstr(communicationBuffer, "+HTTPACTION: 1,200,") != NULL ||
+      strstr(communicationBuffer, "+HTTPACTION: 1,403,") != NULL) {
     DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Location sent successfully"));
     return true;
   }
-  if (communicationString.indexOf(F("+HTTPACTION: 1,401,")) > -1) {
+  if (strstr(communicationBuffer, "+HTTPACTION: 1,401,") != NULL) {
     DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Location was NOT sent. Invalid token"));
     refreshToken();
     return false;
@@ -858,15 +885,10 @@ bool sendLocation() {
  * @param address The starting address in EEPROM to save to.
  * @param length The maximum length of the string to save.
  */
-void saveToEEPROM(String data, uint8_t address, uint8_t length) {
-  DETAILED_DEBUG_PRINT(F("--Method-Start--saveToEEPROM: Data: "));
-  DETAILED_DEBUG_PRINT_LN(data);
+void saveToEEPROM(const char* data, uint8_t address, uint8_t length) {
   for (uint8_t i = 0; i < length; ++i) {
-    if (i < data.length()) {
-      EEPROM.write(address + i, data[i]);
-    } else {
-      EEPROM.write(address + i, '\0');
-    }
+    char c = (data[i] != '\0') ? data[i] : '\0';
+    EEPROM.write(address + i, c);
   }
 }
 
@@ -880,16 +902,17 @@ void saveToEEPROM(String data, uint8_t address, uint8_t length) {
  * @param length The maximum length of the string to read.
  * @return String The string read from EEPROM.
  */
-String readFromEEPROM(uint8_t address, uint8_t length) {
-  String token = "";
-  for (int i = 0; i < length; ++i) {
+void readFromEEPROM(uint8_t address, uint8_t length, char* outputBuffer, size_t bufferSize) {
+  if (bufferSize == 0) return;
+  uint8_t i = 0;
+  while (i < length && i < bufferSize - 1) {
     char c = EEPROM.read(address + i);
     if (c == '\0') break;
-    token += c;
+    outputBuffer[i++] = c;
   }
-  DETAILED_DEBUG_PRINT(F("--Method-Result--readFromEEPROM: "));
-  DETAILED_DEBUG_PRINT_LN(token);
-  return token;
+  outputBuffer[i] = '\0';
+  DETAILED_DEBUG_PRINT(F("Read from EEPROM: "));
+  DETAILED_DEBUG_PRINT_LN(outputBuffer);
 }
 
 // Others ---------------------------------------
@@ -1008,13 +1031,13 @@ void checkBaudRate() {
   delay(250);
   simcomComm.begin(115200);
   delay(250);
-  int attempts = 0;
+  uint8_t attempts = 0;
   char response[64];
   do {
     memset(response, 0, sizeof(response));
     delay(100);
     DETAILED_DEBUG_PRINT_LN(F("Changing baud rate"));
-    simcomComm.println(("AT+IPR=") + String(BAUD_RATE));
+    simcomComm.println(("AT+IPR=") + (BAUD_RATE));
     delay(10);
     uint8_t idx = 0;
     while (simcomComm.available() && idx < sizeof(response) - 1) {
