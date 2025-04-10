@@ -67,7 +67,8 @@ void setup() {
   checkBaudRate();
   simcomComm.println(F("AT+CGNSSPWR=1"));
   clearBuffer();
-  while (!simcomComm.available()) {
+  unsigned long startTime = millis();
+  while (!simcomComm.available() && millis() - startTime < 9000) {
     delay(250);
     DETAILED_DEBUG_PRINT_LN(F("Waiting for GPS to power up..."));
   }
@@ -94,12 +95,17 @@ void setup() {
  * - Waits for the specified interval before the next cycle.
  */
 void loop() {
+  clearBuffer();
   uint8_t attempts = 0;
+  wait(positionInterval);
   do {
     getLocation();
     if (!locationAcquired) {
       DEBUG_PRINT_LN(F("--LOOP-FAIL--\nCant get location, retrying..."));
+      clearBuffer();
       simcomComm.println(F("AT+CGNSSPWR=1"));
+      waitForCommandConfirmation(9000);
+      clearBuffer();
       delay(1000);
       continue;
     }
@@ -113,13 +119,12 @@ void loop() {
     }
     DEBUG_PRINT_LN(F("--LOOP-PASS-FAIL--\nLocation failed to send, retrying..."));
     ++attempts;
-    if (attempts > 5) {
+    if (attempts > 3) {
       attempts = 0;
       DEBUG_PRINT_LN(F("-----FATAL-----\nFailed whole loop, starting refresh token\n-----FATAL-----\n"));
       refreshToken();
     }
   } while (true);
-  wait(positionInterval);
 }
 
 
@@ -138,7 +143,7 @@ void readIMEI() {
   clearBuffer();
   uint8_t attempts = 0;
   char response[32] = {0};
-  while (attempts < 5) {
+  while (attempts < 3) {
     simcomComm.println(F("AT+CGSN"));
     unsigned long startTime = millis();
     while (millis() - startTime < 9000) {
@@ -162,6 +167,7 @@ void readIMEI() {
     }
     DEBUG_PRINT_LN(F("--Method-Result--readIMEI: IMEI was not read correctly"));
     ++attempts;
+    delay(1000);
   }
   if (strlen(response) < 15) {
     DEBUG_PRINT_LN(F("--Method-Result--readIMEI: IMEI was not read correctly after 5 attempts"));
@@ -303,9 +309,9 @@ bool tokenManagement() {
   DEBUG_PRINT_LN(F("--Method-Start--tokenManagement"));
   while (!requestNewToken()) {
     DEBUG_PRINT_LN(F("Failed to retrieve a valid token. Retrying..."));
-    wait(3);
+    wait(2);
   }
-  uint8_t maxVerifyAttempts = 5;
+  uint8_t maxVerifyAttempts = 3;
   while (maxVerifyAttempts > 0) {
     if (verifyToken()) {
       DEBUG_PRINT_LN(F("---Method-Result--tokenManagement: Verified successfully"));
@@ -315,7 +321,7 @@ bool tokenManagement() {
       return false;
     }
     --maxVerifyAttempts;
-    wait(3);
+    wait(2);
   }
   DEBUG_PRINT_LN(F("--Method-Result--tokenManagement: Failed to verify token"));
   return false;
@@ -360,9 +366,18 @@ bool requestNewToken() {
   delay(50);
   simcomComm.println(httpField);
   delay(50);
-  clearBuffer();
   DETAILED_DEBUG_PRINT(F("Sending request to server: "));
   DETAILED_DEBUG_PRINT_LN(httpField);
+  if (!isConnected()) {
+    checkSignalAndReconnect();
+    if (!isConnected()) {
+      DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Not connected"));
+      simcomComm.println(F("AT+HTTPTERM"));
+      waitForCommandConfirmation(12000);
+      return false;
+    }
+  }
+  clearBuffer();
   simcomComm.println(F("AT+HTTPACTION=1"));
   waitForCommandConfirmation(12000);
   memset(httpField, 0, sizeof(httpField));
@@ -463,9 +478,18 @@ bool verifyToken() {
   delay(50);
   simcomComm.println(httpBuffer);
   delay(50);
-  clearBuffer();
   DETAILED_DEBUG_PRINT(F("Sending request to server: "));
   DETAILED_DEBUG_PRINT_LN(httpBuffer);
+  if (!isConnected()) {
+    checkSignalAndReconnect();
+    if (!isConnected()) {
+      DEBUG_PRINT_LN(F("--Method-Result--verifyToken: Not connected"));
+      simcomComm.println(F("AT+HTTPTERM"));
+      waitForCommandConfirmation(12000);
+      return false;
+    }
+  }
+  clearBuffer();
   simcomComm.println(F("AT+HTTPACTION=1"));
   waitForCommandConfirmation(12000);
   memset(httpBuffer, 0, sizeof(httpBuffer));
@@ -552,6 +576,15 @@ bool sendStartupMessage() {
   delay(50);
   simcomComm.println(httpBuffer);
   delay(50);
+  if (!isConnected()) {
+    checkSignalAndReconnect();
+    if (!isConnected()) {
+      DEBUG_PRINT_LN(F("--Method-Result--sendStartupMessage: Not connected"));
+      simcomComm.println(F("AT+HTTPTERM"));
+      waitForCommandConfirmation(12000);
+      return false;
+    }
+  }
   clearBuffer();
   simcomComm.println(F("AT+HTTPACTION=1"));
   waitForCommandConfirmation(12000);
@@ -643,11 +676,11 @@ void getLocation() {
       ++fieldIdx;
     }
     digitalWrite(ledPin, LOW);
-    locationAcquired = true;
     if (latPtr == NULL || lonPtr == NULL) {
       DEBUG_PRINT_LN(F("--Method-Result--getLocation: Failed to get location"));
       return;
     }
+    locationAcquired = true;
     char* endPtr = strchr(latPtr, ',');
     if (endPtr != NULL) {
       *endPtr = '\0';
@@ -709,6 +742,12 @@ bool sendLocation() {
   readFromEEPROM(latAddress, 12, lat, sizeof(lat));
   readFromEEPROM(lonAddress, 12, lon, sizeof(lon));
   readFromEEPROM(speedAddress, 6, speed, sizeof(speed));
+  if (strlen(token) < 16 || strlen(lat) < 3 || strlen(lon) < 3) {
+    DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Invalid data length"));
+    simcomComm.println(F("AT+HTTPTERM"));
+    waitForCommandConfirmation(12000);
+    return false;
+  }
   simcomComm.print(F("AT+HTTPDATA="));
   uint8_t dataLength = strlen(token) + strlen(lat) + strlen(lon) + strlen(speed) + 10 + 9 + 9 + 11 + 2;
   simcomComm.print(dataLength);
@@ -724,6 +763,15 @@ bool sendLocation() {
   simcomComm.print(speed);
   simcomComm.println(F("\"}"));
   waitForCommandConfirmation(10000);
+  if (!isConnected()) {
+    checkSignalAndReconnect();
+    if (!isConnected()) {
+      DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Not connected"));
+      simcomComm.println(F("AT+HTTPTERM"));
+      waitForCommandConfirmation(12000);
+      return false;
+    }
+  }
   clearBuffer();
   simcomComm.println(F("AT+HTTPACTION=1"));
   waitForCommandConfirmation(12000);
@@ -916,7 +964,8 @@ void checkBaudRate() {
     simcomComm.println(("AT+IPR=") + (BAUD_RATE));
     delay(10);
     uint8_t idx = 0;
-    while (simcomComm.available() && idx < sizeof(response) - 1) {
+    unsigned long respStart = millis();
+    while (simcomComm.available() && idx < sizeof(response) - 1 && millis() - respStart < 5000) {
       char c = simcomComm.read();
       if (isPrintable(c)) {
         response[idx++] = c;
