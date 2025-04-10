@@ -1,10 +1,15 @@
 #include <AltSoftSerial.h>
-#include <EEPROM.h>
 #include <math.h>
 
 #define BAUD_RATE 38400 // Baud rate for SIMCOM communication and PC debugging communication
 
 const char APN[] = "internet"; // APN for the SIMCOM module
+
+char globalIMEI[16] = {0}; // Global variable to store the IMEI number
+char globalToken[33] = {0}; // Global variable to store the token
+char globalLat[13] = {0}; // Global variable to store the latitude
+char globalLon[13] = {0}; // Global variable to store the longitude
+char globalSpeed[8] = {0}; // Global variable to store the speed
 
 #define DEBUGGING_LEVEL 2
 
@@ -32,7 +37,6 @@ const uint8_t tokenMaxLength = 32;
 const uint8_t latAddress = tokenMaxLength; // Length 12
 const uint8_t lonAddress = latAddress + 12; // Length 12
 const uint8_t speedAddress = lonAddress + 12; // Length 6
-const uint8_t imeiAddress = speedAddress + 6; // Length 15
 
 bool startupSendEnabled = false;
 uint8_t minimalDistanceDelta = 5; // minimal distance between saved coordinates and current coordinates in meters
@@ -132,11 +136,11 @@ void loop() {
 
 
 /**
- * @brief Reads the IMEI number from the SIM module and saves it to EEPROM.
+ * @brief Reads the IMEI number from the SIM module and saves it to global variable.
  * 
  * This function sends the AT+CGSN command to the SIM module to retrieve the IMEI.
  * It retries up to 5 times if the IMEI is not read correctly. The IMEI is validated
- * to be 15 characters long before being saved to EEPROM.
+ * to be 15 characters long before being saved to global variable.
  */
 void readIMEI() {
   DEBUG_PRINT_LN(F("--Method-Start--readIMEI"));
@@ -174,7 +178,7 @@ void readIMEI() {
     return;
   }
   DEBUG_PRINT_LN(F("--Method-Result--readIMEI: IMEI was read correctly"));
-  saveToEEPROM(response, imeiAddress, 15);
+  snprintf(globalIMEI, sizeof(globalIMEI), "%s", response);
 }
 
 
@@ -347,14 +351,12 @@ bool requestNewToken() {
   waitForCommandConfirmation(12000);
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
-  char imei[16] = {0};
-  readFromEEPROM(imeiAddress, 15, imei, sizeof(imei));
+  const char* imei = globalIMEI;
   if (strlen(imei) < 15) {
-    DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: IMEI was not read correctly"));
+    DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: IMEI is not loaded, retrying..."));
     readIMEI();
-    readFromEEPROM(imeiAddress, 15, imei, sizeof(imei));
     if (strlen(imei) < 15) {
-      DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: IMEI was not read correctly after 5 attempts"));
+      DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: IMEI was not read correctly after 3 attempts"));
       return false;
     }
   }
@@ -410,7 +412,7 @@ bool requestNewToken() {
     simcomComm.println(F("AT+HTTPTERM"));
     waitForCommandConfirmation(12000);
     if (parseJSON(httpField, "token", token, sizeof(token))) {
-      saveToEEPROM(token, tokenAddress, tokenMaxLength);
+      snprintf(globalToken, sizeof(globalToken), "%s", token);
     } else {
       DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Failed to parse token"));
       return false;
@@ -452,7 +454,7 @@ bool requestNewToken() {
  * @brief Verifies the token by sending an HTTP request to the server.
  * 
  * This function initializes an HTTP session, prepares a JSON payload with 
- * the token and IMEI read from EEPROM, and sends it to the server for verification.
+ * the token and IMEI read from global variables, and sends it to the server for verification.
  * It checks the server's response to determine if the token is valid.
  * 
  * @return true if the token is successfully verified, false otherwise.
@@ -467,10 +469,8 @@ bool verifyToken() {
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
   char httpBuffer[80] = {0};
-  char token[33] = {0};
-  char imei[16] = {0};
-  readFromEEPROM(tokenAddress, tokenMaxLength, token, sizeof(token));
-  readFromEEPROM(imeiAddress, 15, imei, sizeof(imei));
+  const char* imei = globalIMEI;
+  const char* token = globalToken;
   snprintf(httpBuffer, sizeof(httpBuffer), "{\"token\":\"%s\",\"imei\":\"%s\"}", token, imei);
   simcomComm.print(F("AT+HTTPDATA="));
   simcomComm.print(strlen(httpBuffer));
@@ -567,8 +567,7 @@ bool sendStartupMessage() {
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
   char httpBuffer[64] = {0};
-  char token[33] = {0};
-  readFromEEPROM(tokenAddress, tokenMaxLength, token, sizeof(token));
+  const char* token = globalToken;
   snprintf(httpBuffer, sizeof(httpBuffer), "{\"token\":\"%s\"}", token);
   simcomComm.print(F("AT+HTTPDATA="));
   simcomComm.print(strlen(httpBuffer));
@@ -610,11 +609,11 @@ bool sendStartupMessage() {
 
 
 /**
- * @brief Retrieves the current GPS location, checks for deviations, and saves the data to EEPROM.
+ * @brief Retrieves the current GPS location, checks for deviations, and saves the data to global variables.
  * 
  * This function communicates with the GPS module to acquire the current latitude, longitude, 
  * and speed. It compares the new location with the previously saved location to detect any 
- * significant movement. If a deviation is detected, the new location and speed are saved to EEPROM.
+ * significant movement. If a deviation is detected, the new location and speed are saved to global variables.
  * 
  * @note The function sets `locationAcquired` and `locationDeviation` flags based on the results.
  * 
@@ -689,25 +688,21 @@ void getLocation() {
     if (endPtr != NULL) {
       *endPtr = '\0';
     }
-    char savedLatBuffer[13] = {0};
-    char savedLonBuffer[13] = {0};
-    readFromEEPROM(latAddress, 12, savedLatBuffer, sizeof(savedLatBuffer));
-    readFromEEPROM(lonAddress, 12, savedLonBuffer, sizeof(savedLonBuffer));
-    if (calculateDistance(atof(latPtr), atof(lonPtr), atof(savedLatBuffer), atof(savedLonBuffer)) < minimalDistanceDelta) {
+    if (calculateDistance(atof(latPtr), atof(lonPtr), atof(globalLat), atof(globalLon)) < minimalDistanceDelta) {
       DEBUG_PRINT_LN(F("--Method-Result--getLocation: Location is the same as the last one"));
       return;
     }
     locationDeviation = true;
-    saveToEEPROM(latPtr, latAddress, 12);
-    saveToEEPROM(lonPtr, lonAddress, 12);
+    snprintf(globalLat, sizeof(globalLat), "%s", latPtr);
+    snprintf(globalLon, sizeof(globalLon), "%s", lonPtr);
     if (speedPtr != NULL) {
       endPtr = strchr(speedPtr, ',');
       if (endPtr != NULL) {
         *endPtr = '\0';
       }
-      saveToEEPROM(speedPtr, speedAddress, 6);
+      snprintf(globalSpeed, sizeof(globalSpeed), "%s", speedPtr);
     } else {
-      saveToEEPROM("0", speedAddress, 6);
+      snprintf(globalSpeed, sizeof(globalSpeed), "0");
     }
   }
 }
@@ -734,14 +729,10 @@ bool sendLocation() {
   waitForCommandConfirmation(12000);
   simcomComm.println(F("AT+HTTPPARA=\"CONTENT\",\"application/json\""));
   waitForCommandConfirmation(12000);
-  char token[33] = {0};
-  char lat[13] = {0};
-  char lon[13] = {0};
-  char speed[7] = {0};
-  readFromEEPROM(tokenAddress, tokenMaxLength, token, sizeof(token));
-  readFromEEPROM(latAddress, 12, lat, sizeof(lat));
-  readFromEEPROM(lonAddress, 12, lon, sizeof(lon));
-  readFromEEPROM(speedAddress, 6, speed, sizeof(speed));
+  const char* token = globalToken;
+  const char* lat = globalLat;
+  const char* lon = globalLon;
+  const char* speed = globalSpeed;
   if (strlen(token) < 16 || strlen(lat) < 3 || strlen(lon) < 3) {
     DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Invalid data length"));
     simcomComm.println(F("AT+HTTPTERM"));
@@ -795,46 +786,6 @@ bool sendLocation() {
   }
   DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Location was NOT sent"));
   return false;
-}
-
-
-// EEPROM operations ----------------------------
-
-
-/**
- * @brief Saves a string to the EEPROM at the specified address.
- * 
- * @param data Pointer to the null-terminated string to save.
- * @param address Starting EEPROM address to write the data.
- * @param length Maximum number of characters to write, including the null terminator.
- */
-void saveToEEPROM(const char* data, uint8_t address, uint8_t length) {
-  for (uint8_t i = 0; i < length; ++i) {
-    char c = (data[i] != '\0') ? data[i] : '\0';
-    EEPROM.write(address + i, c);
-  }
-}
-
-
-/**
- * @brief Reads a string from EEPROM starting at the specified address.
- * 
- * @param address The starting address in EEPROM to read from.
- * @param length The maximum number of bytes to read.
- * @param outputBuffer The buffer to store the read string.
- * @param bufferSize The size of the output buffer.
- */
-void readFromEEPROM(uint8_t address, uint8_t length, char* outputBuffer, size_t bufferSize) {
-  if (bufferSize == 0) return;
-  uint8_t i = 0;
-  while (i < length && i < bufferSize - 1) {
-    char c = EEPROM.read(address + i);
-    if (c == '\0') break;
-    outputBuffer[i++] = c;
-  }
-  outputBuffer[i] = '\0';
-  DETAILED_DEBUG_PRINT(F("Read from EEPROM: "));
-  DETAILED_DEBUG_PRINT_LN(outputBuffer);
 }
 
 
