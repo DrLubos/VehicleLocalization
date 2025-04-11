@@ -688,7 +688,10 @@ void getLocation() {
     if (endPtr != NULL) {
       *endPtr = '\0';
     }
-    if (calculateDistance(atof(latPtr), atof(lonPtr), atof(globalLat), atof(globalLon)) < minimalDistanceDelta) {
+    if (strlen(globalLat) == 0 || strlen(globalLon) == 0) {
+      DEBUG_PRINT_LN(F("No previous location to compare with"));
+      locationDeviation = true;
+    } else if (calculateDistance(atof(latPtr), atof(lonPtr), atof(globalLat), atof(globalLon)) < minimalDistanceDelta) {
       DEBUG_PRINT_LN(F("--Method-Result--getLocation: Location is the same as the last one"));
       return;
     }
