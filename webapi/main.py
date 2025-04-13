@@ -3,7 +3,6 @@ This module contains API endpoints for interaction with the database from web cl
 """
 import datetime
 import logging
-import json
 import bcrypt
 import jwt
 from fastapi import FastAPI, HTTPException, Depends
@@ -17,10 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from api_db_helper.api_logging import LoggingMiddleware
 from api_db_helper.models import User, Vehicle, UserVehicleAssignment, Route, Position,\
-    VehicleStatus, extract_lat_lon_from_wkt
+    VehicleStatus
 from api_db_helper.db_connection import get_db
 from api_db_helper.crud import get_active_assignments_by_user, get_assignment_for_route_and_user,\
     get_active_assignment_by_user_and_vehicle, get_latest_position, update_route_end_city
+from api_db_helper.utils import extract_lat_lon_from_wkt
 
 
 logging.basicConfig(
@@ -602,8 +602,7 @@ async def get_vehicle_routes(vehicle_id: int,
               Route.end_time,
               Route.total_distance,
               Route.start_city,
-              Route.end_city,
-              func.ST_AsGeoJSON(Route.route_geom).label("route_geometry"))
+              Route.end_city)
        .join(UserVehicleAssignment, Route.assignment_id == UserVehicleAssignment.id)
        .filter(
           UserVehicleAssignment.vehicle_id == vehicle_id,
@@ -621,7 +620,6 @@ async def get_vehicle_routes(vehicle_id: int,
     route_list = result_routes.all()
     respone = []
     for route in route_list:
-        route_geojson = json.loads(route.route_geometry) if route.route_geometry else None
         route_dict = {
             "id": route.id,
             "assignment_id": route.assignment_id,
@@ -631,7 +629,6 @@ async def get_vehicle_routes(vehicle_id: int,
             "start_city": route.start_city,
             "start_coords": "No location data",
             "end_coords": "No location data",
-            "route_geometry": route_geojson,
         }
         stmt_positions = (
             select(Position.id,

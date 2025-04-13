@@ -43,8 +43,7 @@ CREATE TABLE IF NOT EXISTS routes (
     end_time TIMESTAMP(0) DEFAULT NULL,-- Date when the route ended
     total_distance INT NOT NULL DEFAULT 0,-- Total distance of the route in meters
     start_city VARCHAR(100),-- City where the route started
-    end_city VARCHAR(100),-- City where the route ended
-    route_geom GEOMETRY(LineString, 4326)-- Geometry of the route
+    end_city VARCHAR(100)-- City where the route ended
 );
 
 -- Table that contains the positions for each route
@@ -53,5 +52,5 @@ CREATE TABLE IF NOT EXISTS positions (
     route_id INT NOT NULL REFERENCES routes(id) ON DELETE CASCADE,-- Route that the position belongs to
     timestamp TIMESTAMP(0) NOT NULL DEFAULT CURRENT_TIMESTAMP,-- Date when the position was recorded
     location GEOMETRY(Point, 4326) NOT NULL,-- Location of the position
-    speed NUMERIC(5,2) NOT NULL-- Speed of the vehicle in km/h
+    speed NUMERIC(5,2)-- Speed of the vehicle in km/h
 );

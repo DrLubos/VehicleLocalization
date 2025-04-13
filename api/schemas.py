@@ -21,7 +21,7 @@ class PositionRequest(BaseModel):
             - title: Longitude
             - description: Received longitude
             - example: -17.1234567
-        speed (float): Received speed.
+        speed (float | None): Received speed.
             - title: Speed
             - description: Received speed
             - example: 50.0
@@ -32,8 +32,8 @@ class PositionRequest(BaseModel):
                        description="Received latitude", example=48.1234567)
     lon: float = Field(..., title="Longitude",
                        description="Received longitude", example=-17.1234567)
-    speed: float = Field(..., title="Speed",
-                         description="Received speed", example=50.0)
+    speed: float | None = Field(None, title="Speed",
+                                description="Received speed", example=50.0)
 
 
 class RouteCreationRequest(BaseModel):

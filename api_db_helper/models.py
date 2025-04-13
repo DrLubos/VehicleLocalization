@@ -115,7 +115,6 @@ class Route(Base):
         total_distance (int): Total distance, defaults to 0.
         start_city (str): Starting city.
         end_city (str): Ending city.
-        route_geom (Geometry): Geometric representation as LINESTRING with SRID 4326.
     """
     __tablename__ = "routes"
     id = Column(Integer, primary_key=True)
@@ -127,7 +126,6 @@ class Route(Base):
     total_distance = Column(Integer, nullable=False, default=0)
     start_city = Column(String(100), nullable=False)
     end_city = Column(String(100), nullable=False)
-    route_geom = Column(Geometry(geometry_type="LINESTRING", srid=4326), nullable=False)
 
 
 class Position(Base):
@@ -148,19 +146,3 @@ class Position(Base):
                        default=datetime.datetime.utcnow())
     location = Column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
     speed = Column(Float, nullable=False)
-
-
-def extract_lat_lon_from_wkt(wkt: str) -> tuple[float, float]:
-    """
-    Extracts latitude and longitude from a WKT (Well-Known Text) POINT string.
-    You need to call ST_AsText function in the query to get the POINT string.
-
-    Args:
-        wkt (str): A WKT POINT string in the format "POINT(lon lat)".
-
-    Returns:
-        tuple[float, float]: A tuple containing the latitude and longitude as floats.
-    """
-    coords = wkt.lstrip("POINT(").rstrip(")").split()
-    lon, lat = float(coords[0]), float(coords[1])
-    return lat, lon

@@ -7,7 +7,7 @@ import secrets
 import logging
 
 from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy import select, update, text
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from geoalchemy2 import WKTElement
 
@@ -15,11 +15,10 @@ from schemas import PositionRequest, RouteCreationRequest, TokenRequest,\
     TokenResponse, TokenVerifyRequest
 from api_db_helper.db_connection import get_db
 from api_db_helper.api_logging import LoggingMiddleware
-from api_db_helper.models import Vehicle, Route, Position, VehicleStatus,\
-    extract_lat_lon_from_wkt
+from api_db_helper.models import Vehicle, Route, Position, VehicleStatus
 from api_db_helper.crud import get_vehicle_by_token, get_active_assignment_by_vehicle,\
     get_latest_route, get_latest_position
-from api_db_helper.utils import get_city_by_coords
+from api_db_helper.utils import get_city_by_coords, extract_lat_lon_from_wkt
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,34 +72,6 @@ def knots_to_kmh(speed_knots: float) -> float:
         float: Speed in kilometers per hour, rounded to two decimal places.
     """
     return round(speed_knots * 1.852, 2)
-
-
-async def update_route_geom(session: AsyncSession, route_id: int, lon: float, lat: float) -> None:
-    """
-    Update the geometry of a route in the database.
-
-    This function updates the `route_geom` field of a route in the `routes` table.
-    If the `route_geom` is NULL, it initializes it with a new line containing the given point.
-    Otherwise, it adds the given point to the existing geometry.
-
-    Args:
-        session (AsyncSession): The SQLAlchemy asynchronous session to use for database operation.
-        route_id (int): The ID of the route to update.
-        lon (float): The longitude of the point to add to the route geometry.
-        lat (float): The latitude of the point to add to the route geometry.
-
-    Returns:
-        None
-    """
-    sql = text("""
-        UPDATE routes
-        SET route_geom = CASE 
-            WHEN route_geom IS NULL THEN ST_MakeLine(ARRAY[ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)])
-            ELSE ST_AddPoint(route_geom, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
-        END
-        WHERE id = :route_id;
-    """)
-    await session.execute(sql, {"lon": lon, "lat": lat, "route_id": route_id})
 
 
 @app.post("/location", status_code=200)
@@ -170,7 +141,6 @@ async def post_location(data: PositionRequest,
             start_time=now,
             start_city=start_city,
             end_city=None,
-            #route_geom=WKTElement(f"POINT({lon} {lat})", srid=4326)
         )
         session.add(new_route)
         await session.flush()
@@ -185,14 +155,13 @@ async def post_location(data: PositionRequest,
         additional_distance = calculate_distance(last_lat, last_lon, lat, lon)
         if not create_new_route:
             route.total_distance += int(additional_distance)
-            route.route_geom = await update_route_geom(session, route_id, lon, lat)
 
     point = WKTElement(f"POINT({lon} {lat})", srid=4326)
     new_position = Position(
         route_id=route_id,
         timestamp=now,
         location=point,
-        speed=knots_to_kmh(data.speed)
+        speed=knots_to_kmh(data.speed) if data.speed else 0
     )
     session.add(new_position)
 
@@ -263,7 +232,6 @@ async def post_route(data: RouteCreationRequest,
         total_distance=0,
         start_city=None,
         end_city=None,
-        route_geom=None
     )
     session.add(new_route)
     await session.flush()
@@ -285,10 +253,17 @@ async def post_token(data: TokenRequest, session: AsyncSession = Depends(get_db)
     Returns:
         dict: A dictionary containing the new token and vehicle configuration details.
     Raises:
-        HTTPException: If the vehicle is not found (404) or if there is a database error (500).
+        HTTPException: If the IMEI is invalid (400).
+        HTTPException: If the vehicle is not found (404).
+        HTTPException: If there is a database error (500).
     Response Model:
         TokenResponse: The response model containing new token and vehicle configuration details.
     """
+    stmt = select(Vehicle).where(Vehicle.imei == data.imei)
+    result = await session.execute(stmt)
+    vehicle = result.scalars().all()
+    if not vehicle:
+        raise HTTPException(status_code=400, detail="Invalid IMEI")
     stmt = select(Vehicle).where(
         Vehicle.imei == data.imei,
         Vehicle.status.in_([VehicleStatus.ACTIVE.value, VehicleStatus.REGISTERED.value])

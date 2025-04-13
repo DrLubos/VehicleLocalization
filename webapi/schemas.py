@@ -185,7 +185,6 @@ class RouteResponse(BaseModel):
         start_coords (str): Starting coordinates of the route.
         end_city (Optional[str]): Ending city of the route.
         end_coords (str): Ending coordinates of the route.
-        route_geometry (Optional[dict]): GeoJSON representation of the route.
     """
     id: int = Field(..., title="ID", description="The ID of the route", example=1)
     assignment_id: int = Field(..., title="Assignment ID",
@@ -205,16 +204,6 @@ class RouteResponse(BaseModel):
                           description="Ending city of the route", example="Los Angeles")
     end_coords: str = Field(..., title="End Coordinates",
                           description="Ending coordinates of the route", example="34.0522 118.2437")
-    route_geometry: Optional[dict] = Field(None, title="Route Geometry",
-                                            description="GeoJSON representation of the route",
-                                            example={
-                                                "type": "LineString",
-                                                "coordinates": [
-                                                    [30, 10],
-                                                    [10, 30],
-                                                    [40, 40]
-                                                ]
-                                            })
 
 
 class PositionResponse(BaseModel):

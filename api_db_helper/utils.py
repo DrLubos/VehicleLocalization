@@ -54,3 +54,18 @@ async def get_city_by_coords(lat: float, lon: float) -> str:
         print(f"Request failed: {e}")
         logging.error("Request failed: %s", e)
     return ""
+
+def extract_lat_lon_from_wkt(wkt: str) -> tuple[float, float]:
+    """
+    Extracts latitude and longitude from a WKT (Well-Known Text) POINT string.
+    You need to call ST_AsText function in the query to get the POINT string.
+
+    Args:
+        wkt (str): A WKT POINT string in the format "POINT(lon lat)".
+
+    Returns:
+        tuple[float, float]: A tuple containing the latitude and longitude as floats.
+    """
+    coords = wkt.lstrip("POINT(").rstrip(")").split()
+    lon, lat = float(coords[0]), float(coords[1])
+    return lat, lon
