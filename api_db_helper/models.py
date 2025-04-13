@@ -145,4 +145,4 @@ class Position(Base):
     timestamp = Column(DateTime, nullable=False,
                        default=datetime.datetime.utcnow())
     location = Column(Geometry(geometry_type="POINT", srid=4326), nullable=False)
-    speed = Column(Float, nullable=False)
+    speed = Column(Float, nullable=True)

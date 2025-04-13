@@ -161,7 +161,7 @@ async def post_location(data: PositionRequest,
         route_id=route_id,
         timestamp=now,
         location=point,
-        speed=knots_to_kmh(data.speed) if data.speed else 0
+        speed=knots_to_kmh(data.speed) if data.speed is not None else None
     )
     session.add(new_position)
 

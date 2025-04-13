@@ -134,7 +134,7 @@ class LastPosition(BaseModel):
     latitude: float = Field(..., title="Latitude", example=48.1486)
     longitude: float = Field(..., title="Longitude", example=17.1077)
     location_time: datetime = Field(..., title="Location Time", example="2023-03-14T18:41:00Z")
-    speed: float = Field(..., title="Speed", example=50.0)
+    speed: float = Field(None, title="Speed", example=50.0)
 
 
 class VehiclePositionResponse(BaseModel):
@@ -224,4 +224,4 @@ class PositionResponse(BaseModel):
                             example=37.7749)
     longitude: float = Field(..., title="Longitude", description="The longitude of the position",
                              example=-122.4194)
-    speed: float = Field(..., title="Speed", description="The speed of the vehicle", example=60.0)
+    speed: float = Field(None, title="Speed", description="The speed of the vehicle", example=60.0)
