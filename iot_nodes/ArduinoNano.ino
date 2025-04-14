@@ -106,7 +106,7 @@ void loop() {
     getLocation();
     if (!locationAcquired) {
       DEBUG_PRINT_LN(F("--LOOP-FAIL--\nCant get location, retrying..."));
-      delay(1000);
+      delay(100);
       continue;
     }
     if (!locationDeviation) {
@@ -420,7 +420,7 @@ bool requestNewToken() {
     }
     if (parseJSON(httpField, "min_distance_delta", delta, sizeof(delta))) {
       int value = atoi(delta);
-      value -= 5;
+      value -= 10;
       if (value < 0) {
         value = 0;
       }
@@ -727,8 +727,8 @@ bool sendLocation() {
     waitForCommandConfirmation(12000);
     return false;
   }
-  simcomComm.print(F("AT+HTTPDATA="));
   uint8_t dataLength = strlen(token) + strlen(lat) + strlen(lon) + strlen(speed) + 10 + 9 + 9 + 11 + 2;
+  simcomComm.print(F("AT+HTTPDATA="));
   simcomComm.print(dataLength);
   simcomComm.println(F(",10000"));
   delay(50);
@@ -741,7 +741,7 @@ bool sendLocation() {
   simcomComm.print(F("\",\"speed\":\""));
   simcomComm.print(speed);
   simcomComm.println(F("\"}"));
-  waitForCommandConfirmation(10000);
+  delay(50);
   clearBuffer();
   simcomComm.println(F("AT+HTTPACTION=1"));
   delay(5000);
