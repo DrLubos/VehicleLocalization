@@ -106,10 +106,6 @@ void loop() {
     getLocation();
     if (!locationAcquired) {
       DEBUG_PRINT_LN(F("--LOOP-FAIL--\nCant get location, retrying..."));
-      clearBuffer();
-      simcomComm.println(F("AT+CGNSSPWR=1"));
-      waitForCommandConfirmation(9000);
-      clearBuffer();
       delay(1000);
       continue;
     }
@@ -126,6 +122,11 @@ void loop() {
     if (attempts > 3) {
       attempts = 0;
       DEBUG_PRINT_LN(F("-----FATAL-----\nFailed whole loop, starting refresh token\n-----FATAL-----\n"));
+      clearBuffer();
+      simcomComm.println(F("AT+CGNSSPWR=1"));
+      waitForCommandConfirmation(9000);
+      clearBuffer();
+      checkSignalAndReconnect();
       refreshToken();
     }
   } while (true);
@@ -362,6 +363,10 @@ bool requestNewToken() {
   }
   char httpField[192] = {0};
   snprintf(httpField, sizeof(httpField), "{\"imei\":\"%s\"}", imei);
+  if (strlen(httpField) < 15) {
+    DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Invalid IMEI length"));
+    return false;
+  }
   simcomComm.print(F("AT+HTTPDATA="));
   simcomComm.print(strlen(httpField));
   simcomComm.println(F(",10000"));
@@ -370,17 +375,9 @@ bool requestNewToken() {
   delay(50);
   DETAILED_DEBUG_PRINT(F("Sending request to server: "));
   DETAILED_DEBUG_PRINT_LN(httpField);
-  if (!isConnected()) {
-    checkSignalAndReconnect();
-    if (!isConnected()) {
-      DEBUG_PRINT_LN(F("--Method-Result--requestNewToken: Not connected"));
-      simcomComm.println(F("AT+HTTPTERM"));
-      waitForCommandConfirmation(12000);
-      return false;
-    }
-  }
   clearBuffer();
   simcomComm.println(F("AT+HTTPACTION=1"));
+  delay(5000);
   waitForCommandConfirmation(12000);
   memset(httpField, 0, sizeof(httpField));
   delay(500);
@@ -423,6 +420,10 @@ bool requestNewToken() {
     }
     if (parseJSON(httpField, "min_distance_delta", delta, sizeof(delta))) {
       int value = atoi(delta);
+      value -= 5;
+      if (value < 0) {
+        value = 0;
+      }
       minimalDistanceDelta = (value > 255) ? 255 : value;
     }
     if (parseJSON(httpField, "manual_start", manual, sizeof(manual))) {
@@ -480,17 +481,9 @@ bool verifyToken() {
   delay(50);
   DETAILED_DEBUG_PRINT(F("Sending request to server: "));
   DETAILED_DEBUG_PRINT_LN(httpBuffer);
-  if (!isConnected()) {
-    checkSignalAndReconnect();
-    if (!isConnected()) {
-      DEBUG_PRINT_LN(F("--Method-Result--verifyToken: Not connected"));
-      simcomComm.println(F("AT+HTTPTERM"));
-      waitForCommandConfirmation(12000);
-      return false;
-    }
-  }
   clearBuffer();
   simcomComm.println(F("AT+HTTPACTION=1"));
+  delay(5000);
   waitForCommandConfirmation(12000);
   memset(httpBuffer, 0, sizeof(httpBuffer));
   delay(500);
@@ -575,17 +568,9 @@ bool sendStartupMessage() {
   delay(50);
   simcomComm.println(httpBuffer);
   delay(50);
-  if (!isConnected()) {
-    checkSignalAndReconnect();
-    if (!isConnected()) {
-      DEBUG_PRINT_LN(F("--Method-Result--sendStartupMessage: Not connected"));
-      simcomComm.println(F("AT+HTTPTERM"));
-      waitForCommandConfirmation(12000);
-      return false;
-    }
-  }
   clearBuffer();
   simcomComm.println(F("AT+HTTPACTION=1"));
+  delay(5000);
   waitForCommandConfirmation(12000);
   memset(httpBuffer, 0, sizeof(httpBuffer));
   delay(500);
@@ -757,17 +742,9 @@ bool sendLocation() {
   simcomComm.print(speed);
   simcomComm.println(F("\"}"));
   waitForCommandConfirmation(10000);
-  if (!isConnected()) {
-    checkSignalAndReconnect();
-    if (!isConnected()) {
-      DEBUG_PRINT_LN(F("--Method-Result--sendLocation: Not connected"));
-      simcomComm.println(F("AT+HTTPTERM"));
-      waitForCommandConfirmation(12000);
-      return false;
-    }
-  }
   clearBuffer();
   simcomComm.println(F("AT+HTTPACTION=1"));
+  delay(5000);
   waitForCommandConfirmation(12000);
   char communicationBuffer[64] = {0};
   delay(500);
@@ -961,7 +938,7 @@ void checkBaudRate() {
  *         error ("ERROR") is received or the maximum wait time is reached.
  */
 bool waitForCommandConfirmation(int maxWaitTime) {
-  delay(2);
+  delay(20);
   DEBUG_PRINT_LN(F("--Method-Start--waitForCommandConfirmation"));
   unsigned long startTime = millis();
   char response[64] = {0};
@@ -1017,19 +994,4 @@ float calculateDistance(float lat1, float lon1, float lat2, float lon2) {
   DEBUG_PRINT(F("Distance between coords: "));
   DEBUG_PRINT_LN(R * c);
   return R * c;
-}
-
-
-/**
- * @brief Calculates the amount of free memory available on the Arduino.
- * 
- * This function estimates the amount of free memory by checking the difference
- * between the address of a local variable and the end of the heap.
- * 
- * @return int The amount of free memory in bytes.
- */
-int freeMemory() {
-  extern int __heap_start, *__brkval;
-  int v;
-  return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
 }
