@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
+import Settings from "./pages/Settings";
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem("authToken") || "");
@@ -43,6 +44,9 @@ function App() {
           path="/"
           element={token ? <Dashboard /> : <Navigate to="/login" replace />}
         />
+        <Route
+          path="/settings"
+          element={token ? <Settings /> : <Navigate to="/login" replace />} />
       </Routes>
   );
 }

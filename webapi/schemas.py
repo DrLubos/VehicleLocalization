@@ -3,7 +3,7 @@ This file contains the Pydantic models for the webapi.
 """
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, ValidationInfo, EmailStr
 from api_db_helper.models import VehicleStatus
 
 
@@ -34,6 +34,54 @@ class LoginRequest(BaseModel):
     """
     username: str
     password: str
+
+
+class ChangeEmailRequest(BaseModel):
+    """
+    Schema for a request to change the user's email address.
+
+    Attributes:
+        new_email (EmailStr): The new email address to be set. Must be a valid email format.
+        password (str): The user's current password for authentication.
+    """
+    new_email: EmailStr = Field(..., title="New Email", example="new@example.com")
+    password: str = Field(..., title="Password", example="userPassword123")
+
+
+class ChangePasswordRequest(BaseModel):
+    """
+    ChangePasswordRequest schema for handling password change requests.
+
+    Attributes:
+        old_password (str): The current password of the user.
+        new_password (str): The new password the user wants to set.
+        confirm_password (str): Confirmation of the new password to ensure it matches.
+    """
+    old_password: str = Field(..., title="Old Password", example="oldPassword123")
+    new_password: str = Field(..., title="New Password", example="newPassword123")
+    confirm_password: str = Field(..., title="Confirm New Password", example="newPassword123")
+
+    @field_validator('confirm_password')
+    @classmethod
+    def passwords_match(cls, v: str, info: ValidationInfo) -> str:
+        """
+        Validates that the provided password matches the new password.
+
+        Args:
+            cls: The class on which the validator is defined.
+            v (str): The value of the password to validate.
+            info (ValidationInfo): Additional validation information, including input data.
+
+        Returns:
+            str: The validated password if it matches the new password.
+
+        Raises:
+            ValueError: If the provided password does not match the new password.
+        """
+        new_pw = info.data.get('new_password')
+        if new_pw is not None and v != new_pw:
+            raise ValueError('New passwords do not match')
+        return v
 
 
 class VehicleCreate(BaseModel):

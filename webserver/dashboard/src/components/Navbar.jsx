@@ -17,18 +17,18 @@ const Navbar = () => {
   };
 
   return (
-    <Flex bg={bg} p={4} align="center">
+    <Flex position="relative" bg={bg} p={4} align="center">
       <Box>
         <Heading size="sm" color={textColor}>
           {username}
         </Heading>
       </Box>
-      <Box flex="1" textAlign="center">
+      <Box position="absolute" left="50%" transform="translateX(-50%)" cursor="pointer">
         <Heading size="lg" color={textColor} cursor="pointer" onClick={() => navigate("/")}>
           VehicleMap
         </Heading>
       </Box>
-      <Box>
+      <Box ml="auto">
         <IconButton
           aria-label="Toggle dark/light mode"
           icon={colorMode === "light" ? <MoonIcon /> : <SunIcon />}

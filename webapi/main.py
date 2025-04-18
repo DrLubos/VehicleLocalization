@@ -9,8 +9,9 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 
-from schemas import LoginRequest, VehicleCreate, VehicleUpdate, VehicleResponse, RouteResponse,\
-    PositionResponse, VehiclePositionResponse, RegistrationRequest
+from schemas import LoginRequest, VehicleCreate, VehicleUpdate, VehicleResponse, RouteResponse, \
+    PositionResponse, VehiclePositionResponse, RegistrationRequest, ChangeEmailRequest, \
+        ChangePasswordRequest
 from sqlalchemy import or_, case, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -194,6 +195,68 @@ async def login_user(login_data: LoginRequest, db: AsyncSession = Depends(get_db
     }
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     return {"token": token, "username": user_in_db.username}
+
+
+@app.put("/user/email", status_code=200)
+async def change_email(request: ChangeEmailRequest,
+                       current_user: User = Depends(get_current_user),
+                       db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Updates the email address of the currently authenticated user.
+
+    Endpoint:
+        PUT /user/email
+
+    Args:
+        request (ChangeEmailRequest): The request body containing the current password 
+            and the new email address.
+        current_user (User): The currently authenticated user, retrieved via dependency injection.
+        db (AsyncSession): The database session, retrieved via dependency injection.
+
+    Returns:
+        dict: A dictionary containing a success flag and a message indicating the result.
+
+    Raises:
+        HTTPException: 
+            - 401 Unauthorized: If the provided password is invalid.
+            - 400 Bad Request: If no new email address is provided.
+    """
+    if not bcrypt.checkpw(request.password.encode('utf-8'),
+                          current_user.password_hash.encode('utf-8')):
+        raise HTTPException(status_code=401, detail="Invalid password")
+    if not request.new_email:
+        raise HTTPException(status_code=400, detail="No new email provided")
+    current_user.email = trim_field(request.new_email)
+    await db.commit()
+    return {"success": True, "message": "Email updated successfully."}
+
+
+@app.put("/user/password", status_code=200)
+async def change_password(request: ChangePasswordRequest,
+                          current_user: User = Depends(get_current_user),
+                          db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Endpoint to change the password of the currently authenticated user.
+
+    Args:
+        request (ChangePasswordRequest): The request body containing old and new password.
+        current_user (User, optional): The currently authenticated user, injected via dependency.
+        db (AsyncSession, optional): The database session, injected via dependency.
+
+    Returns:
+        dict: A dictionary containing a success flag and a message of the result.
+
+    Raises:
+        HTTPException: If the old password provided does not match the current user's password hash.
+    """
+    if not bcrypt.checkpw(request.old_password.encode('utf-8'),
+                          current_user.password_hash.encode('utf-8')):
+        raise HTTPException(status_code=401, detail="Invalid old password")
+    new_hash = bcrypt.hashpw(request.new_password.encode('utf-8'),
+                             bcrypt.gensalt()).decode('utf-8')
+    current_user.password_hash = new_hash
+    await db.commit()
+    return {"success": True, "message": "Password changed successfully."}
 
 
 @app.get("/vehicles/last-position", status_code=200, response_model=list[VehiclePositionResponse])
