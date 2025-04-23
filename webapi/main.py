@@ -21,7 +21,7 @@ from api_db_helper.models import User, Vehicle, UserVehicleAssignment, Route, Po
 from api_db_helper.db_connection import get_db
 from api_db_helper.crud import get_active_assignments_by_user, get_assignment_for_route_and_user,\
     get_active_assignment_by_user_and_vehicle, get_latest_position, update_route_end_city
-from api_db_helper.utils import extract_lat_lon_from_wkt
+from api_db_helper.utils import extract_lat_lon_from_wkt, get_city_by_coords
 
 
 logging.basicConfig(
@@ -324,7 +324,10 @@ async def get_last_location_for_all_vehicles(current_user: User = Depends(get_cu
                                                                         last_position["longitude"],
                                                                         position.timestamp)
                 elif route.end_city:
-                    last_position["city"] = None
+                    last_position["city"] = route.end_city
+                else:
+                    last_position["city"] = await get_city_by_coords(last_position["latitude"],
+                                                                    last_position["longitude"])
                 break
 
         response_dict = {
@@ -645,7 +648,7 @@ async def toggle_vehicle_status(vehicle_id: int,
 async def get_vehicle_routes(vehicle_id: int,
                              current_user: User = Depends(get_current_user),
                              db: AsyncSession = Depends(get_db),
-                             number_of_routes: int = 5) -> list[Route]:
+                             number_of_routes: int = 25) -> list[Route]:
     """
     Retrieve a list of routes for a specific vehicle associated with the current user.
 
