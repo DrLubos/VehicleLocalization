@@ -59,7 +59,7 @@ services:
       - "8080:8080"
     restart: unless-stopped
     volumes:
-      - ./webserver/html:/var/www/html
+      - ./webserver/dashboard/dist:/var/www/html
       - /var/log/apache2:/var/log/apache2
       - ./webserver/entrypoint_webserver.sh:/entrypoint.sh
 
@@ -82,7 +82,6 @@ services:
       - db-data:/var/lib/postgresql/data
       - ./database/structure.sql:/scripts/structure.sql
       - ./database/test_data.sql:/scripts/test_data.sql
-      - ./database/arduino_test_user.sql:/scripts/arduino_test_user.sql
 
 volumes:
   db-data:

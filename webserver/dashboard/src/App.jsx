@@ -35,19 +35,20 @@ function App() {
     }
   }, [token]);
   return (
-      <Routes>
-        <Route
-          path="/login"
-          element={<Login onLogin={() => setToken(localStorage.getItem("authToken"))} />}
-        />
-        <Route
-          path="/"
-          element={token ? <Dashboard /> : <Navigate to="/login" replace />}
-        />
-        <Route
-          path="/settings"
-          element={token ? <Settings /> : <Navigate to="/login" replace />} />
-      </Routes>
+    <Routes>
+      <Route
+        path="/login"
+        element={<Login onLogin={() => setToken(localStorage.getItem("authToken"))} />}
+      />
+      <Route
+        path="/"
+        element={token ? <Dashboard /> : <Navigate to="/login" replace />}
+      />
+      <Route
+        path="/settings"
+        element={token ? <Settings /> : <Navigate to="/login" replace />}
+      />
+    </Routes>
   );
 }
 

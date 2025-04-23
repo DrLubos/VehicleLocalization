@@ -1,4 +1,3 @@
-// src/pages/Settings.jsx
 import React, { useState } from "react";
 import {
     Box, Heading, VStack, FormControl, FormLabel,
@@ -9,10 +8,8 @@ import Navbar from "../components/Navbar";
 
 const Settings = () => {
     const toast = useToast();
-    // email form state
     const [newEmail, setNewEmail] = useState("");
     const [emailPwd, setEmailPwd] = useState("");
-    // password form state
     const [oldPassword, setOldPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
@@ -34,7 +31,7 @@ const Settings = () => {
                     msg = msg[0].msg || msg[0];
                 }
                 toast({ status: "error", title: "Error", description: msg || "Unknown error." });
-            } else{
+            } else {
                 toast({ status: "success", title: "Success", description: "Email updated successfully!" });
             }
         } catch (e) {

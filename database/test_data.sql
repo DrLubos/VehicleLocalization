@@ -1,7 +1,7 @@
 -- Create test data for the application
--- Create test user. Username: test, Password: mojeheslo
+-- Create test user. Username: test, Password: test
 INSERT INTO users (id, username, password_hash, email) 
-VALUES (1, 'test', E'\$2b\$12\$ZLiOXdFIZGkju6ikIt6rKuThNEJ3w2cg19oGMrMjLRmgR/nqjf7Qq', 'test@example.com');
+VALUES (1, 'test', E'\$2b\$12\$j4WfEgcCi3s.ITA3os5eXOtfGPV2yYJp71vxhlk/vc0enoCcEi996', 'test@example.com');
 
 -- Create test vehicle
 INSERT INTO vehicles (id, name, imei, color, status) 
@@ -12,12 +12,11 @@ INSERT INTO user_vehicle_assignments (id, user_id, vehicle_id, start_date)
 VALUES (1, 1, 1, '2024-10-30 12:34:56');
 
 -- Create test route
-INSERT INTO routes (id, assignment_id, start_time, end_time) 
-VALUES (1, 1, '2024-10-30 12:34:56', '2024-10-31 22:59:59');
+INSERT INTO routes (id, assignment_id, start_time, end_time, start_city, end_city, total_distance) 
+VALUES (1, 1, '2024-10-30 12:34:56', '2024-10-31 22:59:59', 'Žilina, SK', 'Vyšný Kubín, SK', 51508);
 
 -- Create test positions
 INSERT INTO positions (route_id, timestamp, location, speed) VALUES
-(1, '2024-10-30 12:34:56', ST_GeomFromText('POINT(2.29430600 48.85884400)', 4326), 45.2),
 (1, '2024-10-31 15:55:55', ST_GeomFromText('POINT(18.75639340 49.20941540)', 4326), 50.7),
 (1, '2024-10-31 17:32:27', ST_GeomFromText('POINT(18.75753210 49.20953370)', 4326), 48.3),
 (1, '2024-10-31 17:33:46', ST_GeomFromText('POINT(18.75891880 49.20987320)', 4326), 52.1),
@@ -56,11 +55,6 @@ INSERT INTO positions (route_id, timestamp, location, speed) VALUES
 (1, '2024-10-31 18:31:25', ST_GeomFromText('POINT(19.30121230 49.20600510)', 4326), 46.3),
 (1, '2024-10-31 18:32:44', ST_GeomFromText('POINT(19.30438040 49.19461820)', 4326), 40.9),
 (1, '2024-10-31 18:34:03', ST_GeomFromText('POINT(19.31041150 49.18439100)', 4326), 38.7);
-
--- Update total_distance for the route
-UPDATE routes 
-SET total_distance = 15432
-WHERE id = 1;
 
 -- Reset sequence values for table users, vehicles, user_vehicle_assignments and routes
 SELECT setval('users_id_seq', (SELECT MAX(id) FROM users) + 1);

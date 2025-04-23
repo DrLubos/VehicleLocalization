@@ -51,7 +51,7 @@ const MapViewUpdater = ({ selectedVehicle }) => {
 };
 
 const Map = ({ vehicles, selectedVehicle, displayedRoutes }) => {
-  const defaultCenter = [48.1486, 17.1077];
+  const defaultCenter = [48.737165, 19.138059];
   const center =
     vehicles.find((veh) => veh.last_position)
       ? [
@@ -61,7 +61,7 @@ const Map = ({ vehicles, selectedVehicle, displayedRoutes }) => {
       : defaultCenter;
   return (
     <Box w="100%" h="100%">
-      <MapContainer center={center} zoom={13} style={{ height: "100%", width: "100%" }}>
+      <MapContainer center={center} zoom={9} style={{ height: "100%", width: "100%" }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
