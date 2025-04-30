@@ -753,7 +753,7 @@ async def get_route_positions(route_id: int,
             Position.timestamp,
             func.ST_AsText(Position.location).label("location"),
             Position.speed)
-        .filter(Position.route_id == route_id))
+        .filter(Position.route_id == route_id).order_by(Position.timestamp))
     positions = result_positions.all()
     response_positions = []
     for pos in positions:
